@@ -8,4 +8,11 @@ madmom
 pytest
 
 [transcribe]
-basic-pitch
+resampy>=0.4.3
+librosa
+mir_eval
+pretty_midi
+scipy
+onnxruntime
+typing_extensions
+setuptools

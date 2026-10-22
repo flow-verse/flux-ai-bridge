@@ -7,7 +7,14 @@ Requires-Python: >=3.10
 Requires-Dist: demucs
 Requires-Dist: numpy
 Provides-Extra: transcribe
-Requires-Dist: basic-pitch; extra == "transcribe"
+Requires-Dist: resampy>=0.4.3; extra == "transcribe"
+Requires-Dist: librosa; extra == "transcribe"
+Requires-Dist: mir_eval; extra == "transcribe"
+Requires-Dist: pretty_midi; extra == "transcribe"
+Requires-Dist: scipy; extra == "transcribe"
+Requires-Dist: onnxruntime; extra == "transcribe"
+Requires-Dist: typing_extensions; extra == "transcribe"
+Requires-Dist: setuptools; extra == "transcribe"
 Provides-Extra: beats
 Requires-Dist: madmom; extra == "beats"
 Provides-Extra: dev

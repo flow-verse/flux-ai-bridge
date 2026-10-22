@@ -25,9 +25,26 @@ DAW (CLAP host) ── flux-ai-clap (Rust, nih-plug) ── IPC/PyO3 ── pyth
 5. madmom downbeats → cue-point heuristics (SSM: novelty / metrical / salience rules)
 6. RAVE real-time timbre transfer
 
+## Install
+```bash
+python3 -m venv .venv && .venv/bin/pip install -e python          # separate (Demucs)
+# optional: audio-to-MIDI (Basic Pitch via ONNX runtime, no TensorFlow needed)
+.venv/bin/pip install --no-deps basic-pitch
+.venv/bin/pip install -e "python[transcribe]"
+```
+`basic-pitch` is installed with `--no-deps` because its `resampy<0.4.3` pin does not build on Python 3.12+.
+
+## Usage
+```bash
+flux-ai separate  clip.wav --out stems/    # drums, bass, vocals, other
+flux-ai transcribe clip.wav --out midi/    # notes + pitch bends
+flux-ai --json separate clip.wav --out stems/   # JSON-lines events for the plugin
+```
+
 ## Verified so far
-- `flux-ai separate` runs end-to-end on macOS arm64 / Python 3.13 (Demucs `htdemucs`, 4 stems).
-- `transcribe` (Basic Pitch) is untested: it needs TensorFlow, so it is an optional extra (`pip install -e "python[transcribe]"`) and may need Python ≤3.12.
+- `separate`: Demucs `htdemucs`, 4 stems (macOS arm64, Python 3.13).
+- `transcribe`: three-note sine melody gave A4, C#5, E5 at the right times (Python 3.12, ONNX backend).
+- Rust `worker` module runs `flux-ai --json` end to end (`cargo test -- --ignored` with `FLUX_AI_BIN` and `FLUX_AI_WAV`).
 
 ## Design constraints from the research reports (see flux-docs/docs/research)
 - Production-quality stem separation is a **batch** job, not a live effect. Pre-process, then load stems as clips.
