@@ -7,11 +7,18 @@ license = "GPL-3.0-or-later"
 [lib]
 crate-type = ["cdylib", "lib"]
 
+[features]
+default = ["plugin"]
+plugin = ["dep:nih_plug"]
+# Aborts (debug builds) if the audio thread allocates.
+rt-assert = ["plugin", "nih_plug/assert_process_allocs"]
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# nih-plug is git-only; pin a rev once the plugin wrapper is added.
-# nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["standalone"] }
+hound = "3"
+ringbuf = "0.4"
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "de421011f41a6d10fc8c7a6084e4f4dee0143683", default-features = false, optional = true }
 
 [dev-dependencies]
 tempfile = "3"

@@ -46,6 +46,21 @@ flux-ai --json separate clip.wav --out stems/   # JSON-lines events for the plug
 - `transcribe`: three-note sine melody gave A4, C#5, E5 at the right times (Python 3.12, ONNX backend).
 - Rust `worker` module runs `flux-ai --json` end to end (`cargo test -- --ignored` with `FLUX_AI_BIN` and `FLUX_AI_WAV`).
 
+## CLAP plugin ("Flux AI Bridge")
+Passes audio through unchanged. Turn **Capture** on to record the track (up to 120 s, stereo) into a pre-allocated lock-free ring; turn it off and a background task writes `capture.wav` and runs `flux-ai --json` (the **Job** parameter picks *Separate stems* or *Audio to MIDI*). Results land in `$FLUX_AI_OUT/job-<time>/` (default `~/Music/Flux`); the worker binary comes from `$FLUX_AI_BIN` (default `flux-ai` on PATH). Returning stems to the host as tracks is still open (issue #3).
+
+```bash
+cargo xtask bundle flux-ai-clap --release     # -> target/bundled/Flux AI Bridge.clap
+cargo xtask bundle flux-ai-clap --features rt-assert   # debug build that aborts if process() allocates
+cargo test -p flux-ai-clap --no-default-features        # logic tests without nih-plug
+tests/host/run.sh                              # end-to-end test in a minimal CLAP host (C)
+```
+
+### Test status
+- Unit tests (worker parsing, WAV writing, job runner): pass.
+- `tests/host/run.sh`: a small C CLAP host loads the bundle, sets Capture on/off through parameter events, feeds 3-8 s of audio and waits; Demucs stems appear (4 wavs). The captured WAV length matched the audio fed (8.02 s for 8 s). Also passes with the `rt-assert` debug build (no allocation on the audio thread).
+- `clap-validator`: 31 passed, 10 skipped (no presets/notes/double precision), 2 failed: `param-set-events` and `param-set-no-cookies`. Those two fail only because the validator's fixed random seed leaves both of this plugin's 2-value parameters unchanged; with a float parameter added they pass. (That float variant instead fails three `state-reproducibility-*` tests, which the unmodified nih-plug `gain` example also fails at this revision.) Not tested in a commercial DAW.
+
 ## Design constraints from the research reports (see flux-docs/docs/research)
 - Production-quality stem separation is a **batch** job, not a live effect. Pre-process, then load stems as clips.
 - Live neural audio (RAVE) must run **causal** with real-time factor < 1.0 under DAW CPU contention; expect tens of ms jitter. Plan for a "slim" fallback and dry passthrough.

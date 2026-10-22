@@ -1,7 +1,11 @@
-//! Flux AI bridge CLAP plugin (skeleton).
-//! Real-time rule: the process() callback must never block or call into Python.
-//! Jobs are submitted to a worker; results come back through a lock-free queue.
+//! Flux AI bridge CLAP plugin.
+//! Real-time rule: process() must never block, allocate, or call into Python.
+//! Audio is captured into a lock-free ring; a background task writes it to disk
+//! and runs the `flux-ai --json` worker.
 
+pub mod capture;
+#[cfg(feature = "plugin")]
+mod plugin;
 pub mod worker;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
