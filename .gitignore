@@ -2,7 +2,7 @@ build/
 target/
 __pycache__/
 *.pyc
-.venv/
+.venv*/
 .DS_Store
 *.wav
 *.onnx
