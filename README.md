@@ -24,3 +24,13 @@ DAW (CLAP host) ── flux-ai-clap (Rust, nih-plug) ── IPC/PyO3 ── pyth
 4. Return stems/MIDI to the host
 5. madmom downbeats → cue-point heuristics (SSM: novelty / metrical / salience rules)
 6. RAVE real-time timbre transfer
+
+## Verified so far
+- `flux-ai separate` runs end-to-end on macOS arm64 / Python 3.13 (Demucs `htdemucs`, 4 stems).
+- `transcribe` (Basic Pitch) is untested: it needs TensorFlow, so it is an optional extra (`pip install -e "python[transcribe]"`) and may need Python ≤3.12.
+
+## Design constraints from the research reports (see flux-docs/docs/research)
+- Production-quality stem separation is a **batch** job, not a live effect. Pre-process, then load stems as clips.
+- Live neural audio (RAVE) must run **causal** with real-time factor < 1.0 under DAW CPU contention; expect tens of ms jitter. Plan for a "slim" fallback and dry passthrough.
+- Report the generate-ahead buffer to the host as fixed latency (Plugin Delay Compensation), as the MRT2-Accompany plugin does.
+- Stems from copyrighted recordings need clearance for commercial release.

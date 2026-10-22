@@ -1,0 +1,11 @@
+demucs
+numpy
+
+[beats]
+madmom
+
+[dev]
+pytest
+
+[transcribe]
+basic-pitch
