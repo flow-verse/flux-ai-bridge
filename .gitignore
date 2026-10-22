@@ -1,0 +1,12 @@
+build/
+target/
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+*.wav
+*.onnx
+*.pt
+node_modules/
+.idea/
+.vscode/

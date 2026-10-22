@@ -1,0 +1,12 @@
+[package]
+name = "flux-ai-clap"
+version = "0.0.1"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+# nih-plug is git-only; pin a rev once the first build is working.
+# nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["standalone"] }

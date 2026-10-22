@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/flux-ai-clap"]
+resolver = "2"
