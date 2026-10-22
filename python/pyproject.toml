@@ -4,8 +4,9 @@ version = "0.0.1"
 description = "Flux AI workers: stem separation, audio-to-MIDI, beat tracking"
 requires-python = ">=3.10"
 license = { text = "GPL-3.0-or-later" }
-dependencies = ["demucs", "basic-pitch", "numpy"]
+dependencies = ["demucs", "numpy"]
 [project.optional-dependencies]
+transcribe = ["basic-pitch"]  # needs a Python/TensorFlow combo basic-pitch supports
 beats = ["madmom"]
 dev = ["pytest"]
 [project.scripts]
