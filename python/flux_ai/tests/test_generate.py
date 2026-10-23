@@ -87,6 +87,21 @@ def test_mode_validation(tmp_path):
         b.generate(GenerateRequest("x", 1.0, tmp_path / "a.wav", mode="remix"))
 
 
+def test_magenta_note_guide_marks_beats_and_key():
+    from flux_ai.backends.magenta_rt import FRAME_RATE, note_guide
+
+    rows = note_guide(frames=FRAME_RATE * 8, bpm=122, key="A minor")
+    onset_frames = [f for f, r in enumerate(rows) if 2 in r]
+    beat = 60 / 122 * FRAME_RATE
+    assert len(onset_frames) == int(8 * 122 / 60) + 1
+    assert all(abs(f - round(i * beat)) == 0 for i, f in enumerate(onset_frames))
+    first = rows[0]
+    assert {p % 12 for p, s in enumerate(first) if s == 2} == {9, 0, 4}  # A minor triad
+    assert first.count(-1) == 128 - 4  # everything else left to the model
+    strict = note_guide(frames=10, bpm=122, key="A minor", strict=True)
+    assert -1 not in strict[0]
+
+
 def test_key_parsing():
     assert music.parse_key("A minor") == (9, "minor")
     assert music.parse_key("Am") == (9, "minor")

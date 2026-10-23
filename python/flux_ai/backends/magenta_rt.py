@@ -48,16 +48,13 @@ def note_guide(frames: int, bpm: float, key: str, strict: bool = False) -> list[
     beat_frames = 60.0 / bpm * FRAME_RATE
     base = 0 if strict else -1
     rows = []
+    beat = 0
     for f in range(frames):
-        beat = int(f // beat_frames)
-        onset_frame = int(round(beat * beat_frames))
-        pos = f - onset_frame
+        while int(round((beat + 1) * beat_frames)) <= f:
+            beat += 1
+        pos = f - int(round(beat * beat_frames))
         chord = chords[(beat // 4) % 4]
         row = [base] * 128
-        if pos < 0:  # rounding put us before this beat's onset frame: still the previous beat
-            beat -= 1
-            pos = f - int(round(beat * beat_frames))
-            chord = chords[(beat // 4) % 4]
         held = pos < 0.8 * beat_frames
         state = 2 if pos == 0 else (1 if held else 0)
         pitches = [36 + chord[0] + (12 if chord[0] < 4 else 0)] + [60 + p for p in chord]
