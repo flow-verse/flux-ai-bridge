@@ -22,7 +22,7 @@ Per-event fields:
 | event | fields (v1 fields in **bold**) |
 |---|---|
 | `started` | **`job`**, **`input`** (input file; the prompt for `generate`; `""` for `backends`); `generate` adds `backend`, `out` |
-| `progress` | `fraction` (0..1, non-decreasing within a job), `message` |
+| `progress` | `fraction` (0..1, non-decreasing within a job, emitted in steps of at least 0.01 plus the final 1.0), `message` |
 | `done` | **`job`**, **`outputs`** (list of paths); `generate` adds `backend`, `model`, `sample_rate`, `seconds`, `elapsed_s`, `provenance` (sidecar path; also the last entry of `outputs`); `backends` adds `backends` (list, see below) |
 | `error` | **`job`**, **`message`**, `error_type` (Python exception class, e.g. `LicenceNotAccepted`) |
 

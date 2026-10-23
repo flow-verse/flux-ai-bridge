@@ -54,7 +54,12 @@ class Emitter:
         self.emit("started", input=input, **extra)
 
     def progress(self, fraction: float, message: str = "") -> None:
+        """Emit progress, throttled to steps of at least 1% (first and final updates always go out)."""
         fraction = max(0.0, min(1.0, float(fraction)))
+        last = getattr(self, "_last_progress", None)
+        if last is not None and fraction < 1.0 and fraction - last < 0.01:
+            return
+        self._last_progress = fraction
         self.emit("progress", fraction=round(fraction, 4), message=message)
 
     def done(self, outputs: list, **extra) -> None:
