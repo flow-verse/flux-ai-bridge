@@ -18,9 +18,16 @@ magenta-rt = ["magenta-rt[mlx]==2.0.3; sys_platform == 'darwin'", "mlx==0.31.2; 
 stable-audio-3 = ["stable-audio-3 @ git+https://github.com/Stability-AI/stable-audio-3", "soundfile"]
 amt = ["anticipation @ git+https://github.com/jthickstun/anticipation@af37397922665a0fb8d474d7988b0f3755a38d45", "torch", "transformers", "mido"]
 bench = ["librosa", "soundfile", "psutil"]
+# MCP server (flux-mcp). Pinned: the 2.x SDK API (MCPServer) is what flux_mcp is written against.
+mcp = ["mcp==2.3.0"]
+# Optional LLM eval runner for flux-mcp (python -m flux_mcp.evals --llm); needs ANTHROPIC_API_KEY.
+mcp-evals = ["mcp==2.3.0", "anthropic>=2.1,<3"]
 dev = ["pytest"]
 [project.scripts]
 flux-ai = "flux_ai.cli:main"
+flux-mcp = "flux_mcp.__main__:main"
+[tool.setuptools.packages.find]
+include = ["flux_ai*", "flux_mcp*"]
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
