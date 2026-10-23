@@ -64,7 +64,15 @@ class StableAudio3Backend:
 
         if tier not in self._models:
             report(progress, 0.02, f"loading Stable Audio 3 {tier} (gated HF repo {HF_REPOS[tier]})")
-            self._models[tier] = StableAudioModel.from_pretrained(TIERS[tier])
+            try:
+                self._models[tier] = StableAudioModel.from_pretrained(TIERS[tier])
+            except Exception as e:
+                if type(e).__name__ == "GatedRepoError" or "gated repo" in str(e).lower():
+                    raise RuntimeError(
+                        f"Hugging Face refused {HF_REPOS[tier]} (gated). Accept Stability AI's terms on "
+                        f"https://huggingface.co/{HF_REPOS[tier]} with your account, then `hf auth login`."
+                    ) from e
+                raise
         model = self._models[tier]
         prompt = req.prompt + "".join(
             s for s in ((f", {req.bpm:g} BPM" if req.bpm else ""), (f", {req.key}" if req.key else ""))
