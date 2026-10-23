@@ -899,12 +899,21 @@ def build_server(session: Session | None = None) -> MCPServer:
         neural_backend: Annotated[str | None, Field(description="Generation backend for audio parts (from list_backends); its licence must already be accepted")] = None,
         seed: Annotated[int, Field(ge=0)] = 0,
         out_dir: Annotated[str | None, Field(description="Output directory (default: <project>/longform); must not contain a previous run")] = None,
+        renderer: Annotated[Literal["builtin", "flux-host"], Field(
+            description="builtin: fast built-in synth (default). flux-host: pitched layers played by plugin "
+                        "instruments in the Flux engine (slower; needs the instrument installed)")] = "builtin",
+        flux_plugins: Annotated[dict[str, str] | None, Field(
+            description="flux-host only: instrument per layer, keys drums/bass/chords/pad/lead/default, values a "
+                        "plugin id or exact name from list_plugins, e.g. {\"default\": \"Surge XT\"}. Drums use the "
+                        "built-in synth unless 'drums' is given")] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Render a long-form piece from a plan with the flux-ai long-form orchestrator. This can take a long
         time (minutes to hours) and reports progress. It writes many files under out_dir. Model licences are
         not accepted here: if the backend's licence is not yet accepted it fails; get the user's agreement
         and accept it via generate_audio first."""
+        if flux_plugins and renderer != "flux-host":
+            raise ToolError("flux_plugins needs renderer='flux-host'")
         await _run(_require_longform)
         args = ["longform"]
         if plan_path:
@@ -920,6 +929,12 @@ def build_server(session: Session | None = None) -> MCPServer:
         args += ["--seed", str(seed), "--out", str(dest)]
         if neural_backend:
             args += ["--neural-backend", neural_backend]
+        if renderer == "flux-host":
+            args += ["--renderer", "flux-host"]
+            if s.config.engine:
+                args += ["--flux-engine", str(s.config.engine)]
+            for layer, pid in (flux_plugins or {}).items():
+                args += ["--flux-plugin", f"{layer}={pid}"]
         done = await _run(lambda: run_oneshot(args, s.config.flux_ai, _progress_bridge(ctx), s.config.job_timeout))
         path, plan = _load_plan(done)
         if plan is not None:

@@ -86,6 +86,33 @@ async def test_validation_happens_before_the_engine(monkeypatch):
         assert r.is_error and "flux-engine not found" in r.content[0].text
 
 
+
+async def test_run_longform_renderer_choice(monkeypatch, tmp_path):
+    import flux_mcp.server as server
+
+    seen = []
+
+    def fake_oneshot(args, flux_ai, progress, timeout):
+        seen.append(list(args))
+        return {"event": "done", "outputs": []}
+
+    monkeypatch.setattr(server, "run_oneshot", fake_oneshot)
+    mcp = build_server(server.Session(server.Config(engine="/opt/flux-engine", workdir=tmp_path)))
+    mcp.session._longform = True
+    async with Client(mcp) as c:
+        schema = {t.name: t for t in (await c.list_tools()).tools}["run_longform"].input_schema["properties"]
+        assert set(schema["renderer"]["enum"]) == {"builtin", "flux-host"} and schema["renderer"]["default"] == "builtin"
+        r = await c.call_tool("run_longform", {"genre": "techno", "hours": 0.1})
+        assert not r.is_error and "--renderer" not in seen[-1]
+        r = await c.call_tool("run_longform", {"genre": "techno", "hours": 0.1, "renderer": "flux-host",
+                                               "flux_plugins": {"default": "Test Synth", "drums": "Kit"}})
+        assert not r.is_error
+        a = seen[-1]
+        assert a[a.index("--renderer") + 1] == "flux-host" and a[a.index("--flux-engine") + 1] == "/opt/flux-engine"
+        assert {"default=Test Synth", "drums=Kit"} == {a[i + 1] for i, x in enumerate(a) if x == "--flux-plugin"}
+        r = await c.call_tool("run_longform", {"genre": "techno", "hours": 0.1, "flux_plugins": {"bass": "X"}})
+        assert r.is_error and "flux-host" in r.content[0].text
+
 def test_pitch_names():
     assert pitch_to_midi("C4") == 60
     assert pitch_to_midi("A4") == 69

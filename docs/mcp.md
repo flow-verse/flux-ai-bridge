@@ -100,7 +100,7 @@ Annotations follow the MCP spec: `readOnlyHint`, `destructiveHint`, `idempotentH
 | `separate_stems` | flux-ai `separate` (Demucs), optional import | open-world |
 | `transcribe_to_midi` | flux-ai `transcribe` (Basic Pitch), then import | open-world |
 | `plan_longform` | `flux-ai longform --plan-only`; result also at `flux://plan` | idempotent |
-| `run_longform` | `flux-ai longform` from a plan (or genre and hours) | open-world |
+| `run_longform` | `flux-ai longform` from a plan (or genre and hours); `renderer` `builtin` (default) or `flux-host` with optional `flux_plugins` per layer (passed as `--renderer flux-host --flux-plugin LAYER=ID`, plus `--flux-engine` when the server was given an engine path) | open-world |
 
 Not exposed on purpose: `begin_agent_turn`/`end_agent_turn` (flux-mcp wraps every edit itself),
 `get_history` (part of `get_project` and every edit result), `ping`, `shutdown`, `set_loop_range`.
