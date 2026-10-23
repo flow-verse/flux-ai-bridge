@@ -25,7 +25,7 @@ section_types:
   groove:    {energy: 0.0, mute: []}
   build:     {energy: 0.05, mute: []}
   peak:      {energy: 0.1, mute: []}
-  breakdown: {energy: -0.3, mute: [kick, hat_closed], add: [pad]}
+  breakdown: {energy: -0.3, mute: [kick, hat_closed], add: [pad, lead]}
   outro:     {energy: -0.25, mute: [kick, clap, lead]}
 energy_curves:
   study_session: [[0.0, 0.40], [0.20, 0.60], [0.50, 0.55], [0.80, 0.65], [1.0, 0.40]]

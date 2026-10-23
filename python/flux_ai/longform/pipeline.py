@@ -121,7 +121,7 @@ def run(plan: planner.SetPlan | dict, out_dir: Path, renderer: Renderer | None =
     stages: dict[str, float] = {}
     data = planner.normalise(plan.data if isinstance(plan, planner.SetPlan) else plan)
     planner.validate(data)
-    out = Path(out_dir)
+    out = Path(out_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
     sr = int(data["sample_rate"])
     renderer = renderer or BuiltinSynthRenderer(sample_rate=sr)

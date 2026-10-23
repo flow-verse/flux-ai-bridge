@@ -121,8 +121,8 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
         e = bp[b]["energy"]
         rng = random.Random(seeds.get("drums", 0) * 7919 + bp[b]["variation"] * 31 + b)
         # phrase-level arrangement mutation (8-bar phrases), so long grooves keep moving
-        pv = bp[(b // 8) * 8]["variation"]
-        mut = pv % 6
+        # consecutive phrases (and phrases two apart) always get different mutations
+        mut = (b // 8 + seeds["section"]) % 6
         for inst in DRUM_LAYERS:
             if inst not in layers:
                 continue
@@ -170,7 +170,7 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
         for b in range(bars):
             rng = random.Random(seeds.get("bass", 0) * 31 + bp[b]["variation"] + b)
             root = bp[b]["chord"]
-            bmut = (bp[(b // 8) * 8]["variation"] // 6) % 4
+            bmut = (b // 8 + seeds["section"] // 6) % 4
             line = bline
             if bmut == 1 and bline[0] != "R":  # shift an offbeat line by an eighth
                 line = bline[-2:] + bline[:-2]
@@ -202,12 +202,20 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
     ext = g["chords"].get("extension")
     c_base = theory.tonic_midi(key, int(g["chords"].get("octave", 4)))
     if "chords" in layers:
-        rline = g["chords"]["rhythms"][s["patterns"]["chord_rhythm"]]
+        rnames = sorted(g["chords"]["rhythms"])
+        main_r = s["patterns"]["chord_rhythm"]
+        alt_r = rnames[(rnames.index(main_r) + 1) % len(rnames)] if main_r in rnames else main_r
         for b in range(bars):
             rng = random.Random(seeds.get("chords", 0) * 17 + bp[b]["variation"] + b)
             e = bp[b]["energy"]
+            ph = b // 8
+            # every third phrase answers with the neighbouring rhythm; voicing register cycles
+            # with period 4, so with the drum (6) and bass (4) mutations a phrase pattern only
+            # recurs after 12 phrases
+            rline = g["chords"]["rhythms"][alt_r if (ph + seeds["section"]) % 3 == 2 else main_r]
             tt = tones + ([ext] if ext is not None and e > 0.6 and bp[b]["variation"] % 3 != 0 else [])
-            pitches = sorted({_fold(theory.degree_pitch(c_base, cents, bp[b]["chord"] + t), c_base - 5, c_base + 9) for t in tt})
+            lo = c_base - 5 + (0, 3, -2, 5)[ph % 4]
+            pitches = sorted({_fold(theory.degree_pitch(c_base, cents, bp[b]["chord"] + t), lo, lo + 14) for t in tt})
             k = 0
             while k < 16:
                 if rline[k] == "x":

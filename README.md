@@ -41,6 +41,12 @@ flux-ai transcribe clip.wav --out midi/    # notes + pitch bends
 flux-ai --json separate clip.wav --out stems/   # JSON-lines events for the plugin
 ```
 
+## Long-form sets (`flux-ai longform`)
+Plans and renders hours of one genre (deep house, techno, lo-fi hip hop, ambient, maqam groove) into one mastered file (−14 LUFS, ≤ −1 dBTP) with chapters, a cue sheet and `provenance.json`. Runs without flux-host for now (built-in placeholder synth). See [docs/longform.md](docs/longform.md).
+```bash
+flux-ai longform --genre "deep house" --hours 1 --out runs/dh-1h
+```
+
 ## Verified so far
 - `separate`: Demucs `htdemucs`, 4 stems (macOS arm64, Python 3.13).
 - `transcribe`: three-note sine melody gave A4, C#5, E5 at the right times (Python 3.12, ONNX backend).
