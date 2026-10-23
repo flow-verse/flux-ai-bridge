@@ -11,3 +11,10 @@ node_modules/
 .idea/
 .vscode/
 *.egg-info/
+*.mid
+*.flac
+*.safetensors
+*.mlxfn
+*.provenance.json
+checkpoints/
+bench-out/
