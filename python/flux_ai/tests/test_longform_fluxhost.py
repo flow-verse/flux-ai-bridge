@@ -17,7 +17,7 @@ import pyloudnorm  # noqa: E402
 import soundfile as sf  # noqa: E402
 
 from flux_ai.longform import analysis, master, outputs, pipeline, planner, symbolic, timing  # noqa: E402
-from flux_ai.longform.fluxhost import FluxHostRenderer, notes_to_clips, parse_plugin_specs  # noqa: E402
+from flux_ai.longform.fluxhost import FluxHostRenderer, notes_to_clips, parse_plugin_specs, parse_preset_specs  # noqa: E402
 from flux_ai.longform.render import ParsedNote, get_renderer, parse_midi  # noqa: E402
 
 HERE = Path(__file__).resolve()
@@ -99,6 +99,43 @@ def test_plugin_precedence(monkeypatch):
     assert FluxHostRenderer().layer_specs({})["lead"] == "Env Synth"
     gains = FluxHostRenderer().layer_gains({"timbre": {"bass": {"level_db": -11}, "pad": {"level_db": -25}}})
     assert gains["bass"] == 0 and gains["pad"] == -14 and gains["drums"] == 0
+
+
+
+def test_layer_presets_and_per_plugin_gains():
+    assert parse_preset_specs(["bass=Deep end", "pad = Pad 1"]) == {"bass": "Deep end", "pad": "Pad 1"}
+    with pytest.raises(ValueError):
+        parse_preset_specs(["default=Pad 1"])  # presets are per layer
+    genre = {"timbre": {"bass": {"level_db": -10}, "pad": {"level_db": -20}},
+             "flux_host": {"presets": {"Surge XT": {"bass": "Deep end", "pad": "Winter warmer"}},
+                           "gain_db": {"Surge XT": {"bass": 0.0, "pad": -7.5}}}}
+    surge, other = {"name": "Surge XT", "id": "s"}, {"name": "Test Synth", "id": "t"}
+    resolved = {"bass": surge, "pad": surge, "lead": other, "chords": surge, "drums": None}
+    r = FluxHostRenderer(presets={"pad": "Pad 1"})
+    pre = r.layer_presets(genre, resolved)
+    assert pre["bass"] == "Deep end"            # genre table for the layer's plugin
+    assert pre["pad"] == "Pad 1"                # --flux-preset wins
+    assert pre["lead"] is None                  # no table for Test Synth: default patch
+    assert pre["chords"] is None and pre["drums"] is None
+    gains = r.layer_gains(genre, resolved)
+    assert gains["pad"] == -7.5                 # measured Surge XT offset
+    assert gains["lead"] == 0.0                 # other plugin: timbre balance (lead has no level: same as bass)
+    flat = r.layer_gains({"flux_host": {"gain_db": {"pad": -3}}}, {"pad": other})
+    assert flat["pad"] == -3                    # a flat map applies to any plugin
+    genre["flux_host"]["transpose"] = {"Surge XT": {"bass": 24}}
+    shift = r.layer_transpose(genre, resolved)
+    assert shift["bass"] == 24 and shift["pad"] == 0 and shift["lead"] == 0 and shift["drums"] == 0
+
+
+def test_genre_tables_name_surge_presets_for_every_pitched_layer():
+    from flux_ai.longform import genres
+    for name in ("deep house", "techno", "lo-fi hip hop", "ambient", "maqam"):
+        g = genres.load(name)
+        presets = g["flux_host"]["presets"]["Surge XT"]
+        gains = g["flux_host"]["gain_db"]["Surge XT"]
+        shift = g["flux_host"]["transpose"]["Surge XT"]
+        assert set(presets) == set(gains) == set(shift) == {"bass", "chords", "pad", "lead"}, name
+        assert all(v % 12 == 0 for v in shift.values()), name  # octave corrections only
 
 
 def test_click_attribution(tmp_path):

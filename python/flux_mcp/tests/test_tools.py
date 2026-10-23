@@ -112,6 +112,13 @@ async def test_run_longform_renderer_choice(monkeypatch, tmp_path):
         assert {"default=Test Synth", "drums=Kit"} == {a[i + 1] for i, x in enumerate(a) if x == "--flux-plugin"}
         r = await c.call_tool("run_longform", {"genre": "techno", "hours": 0.1, "flux_plugins": {"bass": "X"}})
         assert r.is_error and "flux-host" in r.content[0].text
+        r = await c.call_tool("run_longform", {"genre": "techno", "hours": 0.1, "renderer": "flux-host",
+                                               "flux_presets": {"bass": "Rubber bass", "pad": "Pad 1"}})
+        assert not r.is_error
+        a = seen[-1]
+        assert {"bass=Rubber bass", "pad=Pad 1"} == {a[i + 1] for i, x in enumerate(a) if x == "--flux-preset"}
+        r = await c.call_tool("run_longform", {"genre": "techno", "hours": 0.1, "flux_presets": {"bass": "X"}})
+        assert r.is_error and "flux-host" in r.content[0].text
 
 def test_pitch_names():
     assert pitch_to_midi("C4") == 60

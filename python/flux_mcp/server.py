@@ -906,14 +906,19 @@ def build_server(session: Session | None = None) -> MCPServer:
             description="flux-host only: instrument per layer, keys drums/bass/chords/pad/lead/default, values a "
                         "plugin id or exact name from list_plugins, e.g. {\"default\": \"Surge XT\"}. Drums use the "
                         "built-in synth unless 'drums' is given")] = None,
+        flux_presets: Annotated[dict[str, str] | None, Field(
+            description="flux-host only: preset per layer (bass/chords/pad/lead/drums), an exact preset name, "
+                        "'Collection/Name' or an id from the engine's list_presets. Default: the genre table's "
+                        "presets for that instrument (Surge XT factory patches), else the instrument's default "
+                        "patch")] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Render a long-form piece from a plan with the flux-ai long-form orchestrator. This can take a long
         time (minutes to hours) and reports progress. It writes many files under out_dir. Model licences are
         not accepted here: if the backend's licence is not yet accepted it fails; get the user's agreement
         and accept it via generate_audio first."""
-        if flux_plugins and renderer != "flux-host":
-            raise ToolError("flux_plugins needs renderer='flux-host'")
+        if (flux_plugins or flux_presets) and renderer != "flux-host":
+            raise ToolError("flux_plugins and flux_presets need renderer='flux-host'")
         await _run(_require_longform)
         args = ["longform"]
         if plan_path:
@@ -935,6 +940,8 @@ def build_server(session: Session | None = None) -> MCPServer:
                 args += ["--flux-engine", str(s.config.engine)]
             for layer, pid in (flux_plugins or {}).items():
                 args += ["--flux-plugin", f"{layer}={pid}"]
+            for layer, preset in (flux_presets or {}).items():
+                args += ["--flux-preset", f"{layer}={preset}"]
         done = await _run(lambda: run_oneshot(args, s.config.flux_ai, _progress_bridge(ctx), s.config.job_timeout))
         path, plan = _load_plan(done)
         if plan is not None:

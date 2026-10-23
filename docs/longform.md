@@ -319,21 +319,61 @@ Surge XT 1.3.4 CLAP (official notarised release) on the M1 Ultra, seed 1,
   lead −26.9, pad −18.7, chords −22.1 dBFS RMS, so every Surge track sounds.
   The section measures 122.48 BPM (plan 122.5) and A minor (plan A minor) with
   `flux_ai.analysis.analyse`.
-- Every Surge track plays the default "Init Saw" patch, because flux-engine has
-  no `load_preset` yet (flux-host issue #11). The layers differ only in
-  register and note pattern, not timbre. Nobody has listened to the result
-  yet; the numbers above are measurements only.
+- That run used Surge XT's default "Init Saw" patch on every layer. Presets
+  came next (below).
 - Installing Surge XT without admin rights: expand the official `.pkg`
   (`pkgutil --expand-full`), copy `Surge XT.clap` to
   `~/Library/Audio/Plug-Ins/CLAP/` and the resources payload to
   `~/Library/Application Support/Surge XT/`.
 
+### Per-layer Surge XT presets
+
+flux-engine now has `list_presets`/`load_preset` (flux-host #11). Each genre
+table names a Surge XT factory patch per layer under `flux_host.presets`, plus
+two measured corrections for that plugin:
+
+- `transpose`: several factory basses and organs sound one or two octaves
+  below the written note (measured with a single held note and pYIN: "Deep
+  end" plays A0 for a written A2, "House Organ" A1 for A3). The renderer adds
+  the listed semitones so every layer sounds where the planner wrote it. All
+  patches were in tune to within 0.05 semitone.
+- `gain_db`: patch output levels differ by up to 19 dB; the offsets keep the
+  timbre table's balance relative to the bass (measured on a test phrase per
+  layer after transposing).
+
+Override per run with `--flux-preset LAYER=NAME` (MCP: `flux_presets`).
+
+| Genre | bass | chords | pad | lead |
+|---|---|---|---|---|
+| deep house | Deep end (+24) | House Organ (+24) | Winter warmer | Nice pluck 1 |
+| techno | Rubber bass (+12) | FM pluck (+12) | Distant | Acidofil (+24) |
+| lo-fi hip hop | Mellow (+24) | EP2 | Still | Lofipluck |
+| ambient | Sub 1 (+12) | Sunday | Verb Pad (−12) | Fantasy Bell |
+| maqam groove | Pianobass (+24) | Organ 1 | Distant | East |
+
+Chosen by name and measurement, not by listening; they are starting points
+for curation.
+
+10 minutes of deep house, seed 1, with these presets:
+
+| Audio | Wall clock | Speed | LUFS / true peak | Join clicks | Section clicks |
+|---|---|---|---|---|---|
+| 10:12 | 199.8 s | 3.1× | −14.00 / −1.30 dBTP | 0 | 0 |
+
+- The richer patches are about 3× slower to render than Init Saw (8.8×).
+- Tempo estimates match the plan (122.5 / 124 BPM). Key estimates are mixed:
+  section s010 reads B minor as planned; s003 and s006 read D minor (the
+  plan's iv chord dominates those sections); the full part 1 reads A major
+  (right tonic; the organ's drawbar harmonics add a major third). The same
+  plan rendered with the built-in synth also misses part 2 (G major), so the
+  estimator, not the instruments, is the limit here.
+
 ## Limitations
 
 - **The built-in synth is a placeholder** for flux-host + Surge XT rendering.
   It is serviceable for testing the pipeline and checking structure, not a
-  release-quality sound. The flux-host renderer works with Surge XT (measured
-  above), but without `load_preset` every plugin plays its default patch.
+  release-quality sound. The flux-host renderer with per-layer Surge XT
+  presets is the intended path (measured above).
 - flux-host renders sections sequentially through one engine; several engines
   in parallel would bring the render stage closer to the builtin renderer's.
 - Genre tables are starting values for owner curation, not sourced facts; the

@@ -82,3 +82,18 @@ timbre:
   texture: none
 neural:
   prompt: "hypnotic techno instrumental, {bpm} BPM, {key}, dark industrial texture"
+
+# Instruments for --renderer flux-host: factory presets per plugin and layer
+# (load_preset names; starting choices for owner curation, chosen by name and a
+# level check, not by listening).
+flux_host:
+  presets:
+    "Surge XT": {bass: "Surge XT Factory Presets/Rubber bass", chords: "Surge XT Factory Presets/FM pluck", pad: "Surge XT Factory Presets/Distant", lead: "Surge XT Factory Presets/Acidofil"}
+  # Semitones added to each layer's notes so the patch sounds at the written pitch (measured: several
+  # factory basses and organs play one or two octaves below the note).
+  transpose:
+    "Surge XT": {bass: 12, chords: 12, pad: 0, lead: 24}
+  # Measured patch levels (flux-engine, test phrase per layer, after transpose) offset so the mix keeps
+  # the timbre table's balance relative to the bass.
+  gain_db:
+    "Surge XT": {bass: 0.0, chords: 5.5, pad: -4.1, lead: -1.9}

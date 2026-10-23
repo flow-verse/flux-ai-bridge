@@ -47,6 +47,9 @@ def register(sub) -> None:
                    help="instrument for a layer (drums, bass, chords, pad, lead, or default for all pitched "
                         "layers), by plugin id or exact name; repeatable. Default: $FLUX_LONGFORM_PLUGIN or Surge XT. "
                         "Drums use the built-in synth unless drums=ID is given")
+    p.add_argument("--flux-preset", action="append", default=[], metavar="LAYER=PRESET",
+                   help="preset for a layer's instrument (exact name, 'Collection/Name' or list_presets id); "
+                        "repeatable. Default: the genre table's flux_host.presets, else the plugin's default patch")
     p.add_argument("--flux-block", type=int, default=None, metavar="N",
                    help="flux-engine render block length (engine default 1024)")
     p.add_argument("--json", dest="longform_json", action="store_true", help="JSON-lines events (job protocol v2)")
@@ -94,17 +97,18 @@ def run_cli(a: argparse.Namespace) -> int:
                 print(plan_path)
             return 0
         if a.renderer == "flux-host":
-            from .fluxhost import parse_plugin_specs
+            from .fluxhost import parse_plugin_specs, parse_preset_specs
 
             renderer = get_renderer("flux-host", sample_rate=int(sp.data.get("sample_rate", 48000)),
-                                    engine=a.flux_engine, plugins=parse_plugin_specs(a.flux_plugin), block=a.flux_block)
+                                    engine=a.flux_engine, plugins=parse_plugin_specs(a.flux_plugin), block=a.flux_block,
+                                    presets=parse_preset_specs(a.flux_preset))
             ok, why = renderer.available()
             if not ok:
                 renderer.close()
                 raise RuntimeError(f"flux-host renderer unavailable: {why}")
         else:
-            if a.flux_plugin or a.flux_engine:
-                raise ValueError("--flux-plugin/--flux-engine need --renderer flux-host")
+            if a.flux_plugin or a.flux_engine or a.flux_preset:
+                raise ValueError("--flux-plugin/--flux-preset/--flux-engine need --renderer flux-host")
             renderer = get_renderer(a.renderer)
         try:
             report = pipeline.run(sp, a.out, renderer=renderer, workers=a.workers, fmt=a.format,

@@ -76,3 +76,18 @@ timbre:
   texture: air
 neural:
   prompt: "ambient drone, evolving pads, {key}, no drums"
+
+# Instruments for --renderer flux-host: factory presets per plugin and layer
+# (load_preset names; starting choices for owner curation, chosen by name and a
+# level check, not by listening).
+flux_host:
+  presets:
+    "Surge XT": {bass: "Surge XT Factory Presets/Sub 1", chords: "Surge XT Factory Presets/Sunday", pad: "Surge XT Factory Presets/Verb Pad", lead: "Surge XT Factory Presets/Fantasy Bell"}
+  # Semitones added to each layer's notes so the patch sounds at the written pitch (measured: several
+  # factory basses and organs play one or two octaves below the note).
+  transpose:
+    "Surge XT": {bass: 12, chords: 0, pad: -12, lead: 0}
+  # Measured patch levels (flux-engine, test phrase per layer, after transpose) offset so the mix keeps
+  # the timbre table's balance relative to the bass.
+  gain_db:
+    "Surge XT": {bass: 0.0, chords: 4.9, pad: -6.6, lead: -3.6}

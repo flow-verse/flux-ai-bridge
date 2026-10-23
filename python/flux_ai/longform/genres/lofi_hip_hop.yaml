@@ -84,3 +84,18 @@ timbre:
   texture: vinyl
 neural:
   prompt: "lo-fi hip hop instrumental, dusty drums, mellow jazz chords, {bpm} BPM, {key}"
+
+# Instruments for --renderer flux-host: factory presets per plugin and layer
+# (load_preset names; starting choices for owner curation, chosen by name and a
+# level check, not by listening).
+flux_host:
+  presets:
+    "Surge XT": {bass: "Surge XT Factory Presets/Mellow", chords: "Surge XT Factory Presets/EP2", pad: "Surge XT Factory Presets/Still", lead: "Surge XT Factory Presets/Lofipluck"}
+  # Semitones added to each layer's notes so the patch sounds at the written pitch (measured: several
+  # factory basses and organs play one or two octaves below the note).
+  transpose:
+    "Surge XT": {bass: 24, chords: 0, pad: 0, lead: 0}
+  # Measured patch levels (flux-engine, test phrase per layer, after transpose) offset so the mix keeps
+  # the timbre table's balance relative to the bass.
+  gain_db:
+    "Surge XT": {bass: 0.0, chords: 3.4, pad: -7.0, lead: 2.3}

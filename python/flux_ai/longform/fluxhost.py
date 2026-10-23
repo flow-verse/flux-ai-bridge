@@ -57,18 +57,25 @@ TICKS = 960  # write_notes positions are rounded to the engine's PPQ
 KICK_NOTE = 36
 
 
-def parse_plugin_specs(specs: list[str] | None) -> dict[str, str]:
+def parse_plugin_specs(specs: list[str] | None, flag: str = "--flux-plugin",
+                       allow_default: bool = True) -> dict[str, str]:
     """`["bass=Surge XT", "default=Test Synth"]` -> {"bass": "Surge XT", "default": "Test Synth"}."""
+    allowed = (*LAYERS, "default") if allow_default else LAYERS
     out: dict[str, str] = {}
     for spec in specs or []:
-        layer, sep, pid = spec.partition("=")
-        layer, pid = layer.strip().lower(), pid.strip()
-        if not sep or not pid:
-            raise ValueError(f"--flux-plugin wants LAYER=PLUGIN_ID, got {spec!r}")
-        if layer not in (*LAYERS, "default"):
-            raise ValueError(f"--flux-plugin layer {layer!r} is not one of {', '.join((*LAYERS, 'default'))}")
-        out[layer] = pid
+        layer, sep, value = spec.partition("=")
+        layer, value = layer.strip().lower(), value.strip()
+        if not sep or not value:
+            raise ValueError(f"{flag} wants LAYER=VALUE, got {spec!r}")
+        if layer not in allowed:
+            raise ValueError(f"{flag} layer {layer!r} is not one of {', '.join(allowed)}")
+        out[layer] = value
     return out
+
+
+def parse_preset_specs(specs: list[str] | None) -> dict[str, str]:
+    """`["bass=Deep end", "pad=Surge XT Factory Presets/Pad 1"]` -> {"bass": "Deep end", ...}."""
+    return parse_plugin_specs(specs, flag="--flux-preset", allow_default=False)
 
 
 def notes_to_clips(notes: list[render.ParsedNote], bpm: float, clip_beats: float, tracks: dict[str, str]
@@ -114,11 +121,13 @@ class FluxHostRenderer(render.Renderer):
 
     def __init__(self, sample_rate: int = 48000, tail_seconds: float = 4.0, engine: str | None = None,
                  plugins: dict[str, str] | None = None, block: int | None = None,
+                 presets: dict[str, str] | None = None,
                  client: engine_client.EngineClient | None = None, call_timeout: float = 120.0,
                  render_timeout: float = 3600.0):
         super().__init__(sample_rate=sample_rate, tail_seconds=tail_seconds)
         self.plugins = dict(plugins or {})
         self.default_plugin = self.plugins.pop("default", None)
+        self.presets = dict(presets or {})
         self.engine = engine
         self.block = block
         self.call_timeout = call_timeout
@@ -191,6 +200,29 @@ class FluxHostRenderer(render.Renderer):
             out[layer] = spec
         return out
 
+    def layer_presets(self, genre: dict, resolved: dict[str, dict | None]) -> dict[str, str | None]:
+        """Preset per layer. Precedence: --flux-preset LAYER, then the genre table's
+        flux_host.presets[<plugin name>][LAYER]; none means the plugin's default patch."""
+        table = (genre.get("flux_host") or {}).get("presets") or {}
+        out: dict[str, str | None] = {}
+        for layer, plugin in resolved.items():
+            if plugin is None:
+                out[layer] = None
+                continue
+            out[layer] = self.presets.get(layer) or (table.get(plugin.get("name")) or {}).get(layer)
+        return out
+
+    def layer_transpose(self, genre: dict, resolved: dict[str, dict | None]) -> dict[str, int]:
+        """Semitones added to each layer's notes for its instrument (genre flux_host.transpose per plugin
+        name). Patches that play an octave or two below the written note (sub-octave basses, 16' organ
+        drawbars) are corrected here so every layer sounds in the register the planner wrote."""
+        table = (genre.get("flux_host") or {}).get("transpose") or {}
+        out: dict[str, int] = {}
+        for layer, plugin in resolved.items():
+            per = table.get(plugin.get("name")) if plugin else None
+            out[layer] = int((per or {}).get(layer, 0)) if isinstance(per, dict) else 0
+        return out
+
     def identity(self) -> dict:
         """Everything that changes the audio: engine build, plugins, this code. Starts the engine."""
         if self._identity is None:
@@ -208,6 +240,10 @@ class FluxHostRenderer(render.Renderer):
                 "engine": {"api_version": ready.get("api_version"), "binary": str(exe), "size": st.st_size,
                            "mtime": int(st.st_mtime), "block": self.block},
                 "plugins": plugins,
+                "presets": dict(self.presets),
+                "genre_tables": hashlib.sha256(b"".join(
+                    p.read_bytes() for p in sorted((Path(genres.__file__).parent / "genres").glob("*.yaml")))
+                ).hexdigest()[:12],
                 "drums": "plugin" if "drums" in self.plugins else "builtin-synth unless the genre table maps drums",
             }
         return self._identity
@@ -236,11 +272,20 @@ class FluxHostRenderer(render.Renderer):
         clips, conv = notes_to_clips(notes, bpm, clip_bars * 4, routing)
         clips = {name: ns for name, ns in clips.items() if ns}
         plugin_of = {name: resolved["drums" if name == "kick" else name] for name in clips}
+        layer_preset = self.layer_presets(genre, resolved)
+        shift = self.layer_transpose(genre, resolved)
+        for name, ns in clips.items():
+            k = shift["drums" if name == "kick" else name] if name in ("kick", *LAYERS) else 0
+            if k:
+                for note in ns:
+                    note["pitch"] = min(127, max(0, int(note["pitch"]) + k))
+        preset_of = {name: layer_preset["drums" if name == "kick" else name] for name in clips}
 
         last: Exception | None = None
         for attempt in range(2):
             try:
-                eng = self._render_engine(section_plan["id"], out_wav.parent, bpm, clip_bars, n, clips, plugin_of)
+                eng = self._render_engine(section_plan["id"], out_wav.parent, bpm, clip_bars, n, clips, plugin_of,
+                                          preset_of)
                 break
             except engine_client.EngineCrashed as e:  # restarted on the next call; redo the section from scratch
                 last = e
@@ -249,7 +294,7 @@ class FluxHostRenderer(render.Renderer):
             raise RuntimeError(f"flux-engine crashed twice rendering {section_plan['id']}: {last}") from last
 
         stems, info = eng
-        level = {k: synth.db(v) for k, v in self.layer_gains(genre).items()}
+        level = {k: synth.db(v) for k, v in self.layer_gains(genre, resolved).items()}
         low, high = base.low, base.high
         duck = base.duck[:, None]
         for name, x in stems.items():
@@ -261,18 +306,25 @@ class FluxHostRenderer(render.Renderer):
         stats = {"notes": len(notes), "tail_seconds": base.tail,
                  "plugins": {layer: (r or "builtin-synth") for layer, r in resolved.items()
                              if layer in clips or (layer == "drums" and drums_builtin)},
+                 "presets": {layer: p for layer, p in layer_preset.items() if p and layer in clips},
+                 "transpose": {layer: k for layer, k in shift.items() if k and layer in clips},
                  "engine": info, "conversion": {**conv, "pitch_bend": "not carried (rounded to semitones)",
                                                 "cc74_brightness": "not carried"}}
         return render.write_section(out_wav, low, high, sr, body, stats)
 
-    def layer_gains(self, genre: dict) -> dict[str, float]:
-        """dB applied to each engine stem: genre flux_host.gain_db, else the genre timbre's level_db relative
-        to the bass (keeps the table's balance between layers; the plugin's own output sets the level)."""
-        explicit = (genre.get("flux_host") or {}).get("gain_db") or {}
+    def layer_gains(self, genre: dict, resolved: dict[str, dict | None] | None = None) -> dict[str, float]:
+        """dB applied to each engine stem: genre flux_host.gain_db (per plugin name, as measured for that
+        plugin's presets; a flat {layer: dB} map applies to any plugin), else the genre timbre's level_db
+        relative to the bass (keeps the table's balance; the plugin's own output sets the level)."""
+        table = (genre.get("flux_host") or {}).get("gain_db") or {}
         tim = genre.get("timbre", {})
         ref = float(tim.get("bass", {}).get("level_db", 0.0))
         out = {}
         for layer in LAYERS:
+            plugin = (resolved or {}).get(layer)
+            per_plugin = table.get(plugin.get("name")) if plugin else None
+            explicit = per_plugin if isinstance(per_plugin, dict) else {
+                k: v for k, v in table.items() if not isinstance(v, dict)}
             if layer in explicit:
                 out[layer] = float(explicit[layer])
             elif layer == "drums":
@@ -282,7 +334,8 @@ class FluxHostRenderer(render.Renderer):
         return out
 
     def _render_engine(self, sid: str, workdir: Path, bpm: float, clip_bars: int, frames: int,
-                       clips: dict[str, list[dict]], plugin_of: dict[str, dict]) -> tuple[dict[str, np.ndarray], dict]:
+                       clips: dict[str, list[dict]], plugin_of: dict[str, dict],
+                       preset_of: dict[str, str | None] | None = None) -> tuple[dict[str, np.ndarray], dict]:
         import soundfile as sf
 
         sr = self.sample_rate
@@ -295,6 +348,7 @@ class FluxHostRenderer(render.Renderer):
         self._call("create_project", {"dir": str(proj), "bpm": bpm})
         turns = []
         track_ids: dict[str, str] = {}
+        loaded: dict[str, dict] = {}
 
         def turn(label: str, body) -> None:
             self._call("begin_agent_turn", {"label": label})
@@ -316,6 +370,10 @@ class FluxHostRenderer(render.Renderer):
                 if st != "ok":
                     raise RuntimeError(f"{sid}: plugin {plugin_of[name]['name']} on track {name} has status {st}")
                 track_ids[name] = res["track"]
+                preset = (preset_of or {}).get(name)
+                if preset:
+                    got = self._call("load_preset", {"plugin": res["plugin"]["id"], "preset": preset})["preset"]
+                    loaded[name] = {"requested": preset, "name": got.get("name"), "group": got.get("group")}
 
         def write() -> None:
             for name, notes in clips.items():
@@ -351,6 +409,7 @@ class FluxHostRenderer(render.Renderer):
         shutil.rmtree(rdir, ignore_errors=True)
         info = {"api_version": (self.client._ready or {}).get("api_version"), "project": "project",
                 "turns": turns, "history": history, "tracks": {k: plugin_of[k]["id"] for k in track_ids},
+                "presets": loaded,
                 "build_seconds": round(build_s, 3), "render_wall_seconds": round(float(res.get("wall_sec", 0)), 3),
                 "render_speed_factor": res.get("speed_factor"), "engine_restarts": self.client.restarts,
                 "stem_rms_dbfs": {k: round(float(10 * np.log10(np.mean(np.square(v, dtype=np.float64)) + 1e-20)), 2)
