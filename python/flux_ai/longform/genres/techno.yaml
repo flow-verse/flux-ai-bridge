@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# STARTING VALUES FOR OWNER CURATION. Common-practice guesses, NOT sourced facts.
+# See deep_house.yaml for the grid-string legend.
+name: techno
+aliases: [techno, peak-time techno, hypnotic techno]
+tuning: 12tet
+bpm: {min: 126, max: 134}
+bpm_step_max: 2.0
+swing: 0.5
+key_system: camelot
+keys:
+  start: ["A minor", "F minor", "G minor", "E minor", "C minor"]
+  moves: {"same": 4, "+1": 2, "-1": 2, "relative": 0, "+2 energy boost": 1}
+  minor_mode: phrygian
+  major_mode: mixolydian
+segment:
+  target_minutes: 6.0
+  forms:
+    hypnotic: [[intro, 32], [groove, 32], [build, 16], [peak, 48], [breakdown, 16], [peak, 32], [outro, 16]]
+    driving:  [[intro, 16], [groove, 48], [peak, 32], [breakdown, 8], [build, 8], [peak, 32], [outro, 16]]
+    minimal:  [[intro, 16], [groove, 64], [breakdown, 16], [peak, 48], [outro, 16]]
+  transition: {type: blend, bars: 32, eq: true, bass_swap: true}
+section_types:
+  intro:     {energy: -0.20, mute: [lead, clap, chords]}
+  groove:    {energy: -0.05, mute: [lead]}
+  build:     {energy: 0.05, mute: [], riser: true}
+  peak:      {energy: 0.15, mute: []}
+  breakdown: {energy: -0.35, mute: [kick, bass, hat_closed], add: [pad]}
+  outro:     {energy: -0.20, mute: [lead, chords]}
+energy_curves:
+  warmup_two_peaks: [[0.0, 0.35], [0.30, 0.75], [0.45, 0.90], [0.60, 0.65], [0.85, 1.0], [1.0, 0.45]]
+  relentless:       [[0.0, 0.50], [0.20, 0.85], [0.90, 0.95], [1.0, 0.50]]
+layers: {kick: 0.0, clap: 0.4, hat_closed: 0.2, hat_open: 0.45, perc: 0.55, ride: 0.7, bass: 0.15, chords: 0.5, pad: 0.8, lead: 0.6}
+drums:
+  patterns:
+    straight_a: {kick: "x...x...x...x...", clap: "....x.......x...", hat_closed: "xoxoxoxoxoxoxoxo", hat_open: "..x...x...x...x.", perc: "...x..x....x..x.", ride: "x.x.x.x.x.x.x.x."}
+    rumble_b:   {kick: "x...x...x...x...", clap: "........x.......", hat_closed: "x.xxx.xxx.xxx.xx", hat_open: "..x...x...x...x.", perc: "..o..o..o..o..o.", ride: "x...x...x...x..."}
+    broken_c:   {kick: "x...x...x..ox...", clap: "....x.......x...", hat_closed: ".xx..xx..xx..xx.", hat_open: "..x.......x.....", perc: "x..x..x..x..x...", ride: "x.o.x.o.x.o.x.o."}
+    tribal_d:   {kick: "x...x...x...x...", clap: "....x.......x.o.", hat_closed: "xoxoxoxoxoxoxoxo", hat_open: "......x.......x.", perc: "x.o.xo.ox.o.xo.o", ride: ""}
+  fill: {clap: "x.x.x.x.xxxxxxxx", hat_closed: "xxxxxxxxxxxxxxxx"}
+bass:
+  octave: 1
+  patterns:
+    rumble:  "..RR..RR..RR..RR"
+    offbeat: "..R...R...R...R."
+    gallop:  ".RR..RR..RR..RR."
+    acid:    "R.8.Rb.R.5.R8.R."
+chords:
+  octave: 4
+  tones: [0, 2, 4]
+  extension: 6
+  progressions:
+    drone_a: [0, 0, 0, 0]
+    drone_b: [0, 0, 1, 0]
+    two_c:   [0, 0, 6, 6]
+    two_d:   [0, 5, 0, 5]
+  rhythms:
+    stab_a: "x.....x.....x..."
+    stab_b: "..x.....x.....x."
+    held:   "x---------------"
+lead:
+  octave: 5
+  motif_bars: [1, 1, 2]
+  notes_per_bar: [4, 8]
+  range_degrees: [-3, 7]
+motif_pool: 8
+transforms: [identity, up2, down3, invert, retrograde, shift]
+no_repeat: {form: 1, drums: 2, bass: 2, progression: 2, chord_rhythm: 1, motif: 4}
+timbre:
+  kick:       {freq: 46, pitch_amount: 4.0, pitch_decay: 0.035, decay: 0.45, click: 0.45, level_db: -3}
+  clap:       {decay: 0.2, tone: 1300, level_db: -15}
+  hat_closed: {decay: 0.035, tone: 9000, level_db: -19}
+  hat_open:   {decay: 0.18, tone: 8000, level_db: -21}
+  perc:       {kind: rim, freq: 700, decay: 0.06, level_db: -20}
+  ride:       {decay: 0.5, tone: 7000, level_db: -26}
+  bass:  {wave: saw, sub: 0.8, cutoff: 180, env_amount: 3.0, env_decay: 0.08, attack: 0.003, decay: 0.12, sustain: 0.5, release: 0.03, level_db: -11}
+  chords: {wave: square, voices: 2, detune_cents: 6, cutoff: 1000, env_amount: 3.0, env_decay: 0.08, attack: 0.002, decay: 0.12, sustain: 0.1, release: 0.15, level_db: -22, reverb: 0.45, delay: 0.3}
+  pad:   {wave: saw, voices: 3, detune_cents: 15, cutoff: 700, env_amount: 0.2, env_decay: 1.0, attack: 1.2, decay: 1.0, sustain: 0.8, release: 1.5, level_db: -26, reverb: 0.6}
+  lead:  {wave: saw, voices: 1, cutoff: 1500, env_amount: 3.5, env_decay: 0.07, attack: 0.002, decay: 0.1, sustain: 0.2, release: 0.08, level_db: -23, reverb: 0.3, delay: 0.35, vibrato_cents: 0}
+  sidechain: {depth: 0.5, release: 0.14}
+  reverb: {seconds: 2.4}
+  texture: none
+neural:
+  prompt: "hypnotic techno instrumental, {bpm} BPM, {key}, dark industrial texture"

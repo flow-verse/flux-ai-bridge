@@ -49,7 +49,12 @@ def main(argv=None) -> int:
         s = sub.add_parser(name)
         s.add_argument("input", type=Path)
         s.add_argument("--out", type=Path, required=True)
+    from flux_ai.longform.cli import register as register_longform  # P5; light import
+
+    register_longform(sub)
     a = p.parse_args(argv)
+    if a.cmd == "longform":
+        return a.func(a)
 
     emit(a.json, event="started", job=a.cmd, input=str(a.input))
     try:

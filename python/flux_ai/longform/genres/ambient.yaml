@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# STARTING VALUES FOR OWNER CURATION. Common-practice guesses, NOT sourced facts.
+# See deep_house.yaml for the grid-string legend. Ambient uses a nominal slow
+# tempo only as a grid for phrase lengths; most layers are drones and pads.
+name: ambient
+aliases: [ambient, drone, ambient drone]
+tuning: 12tet
+bpm: {min: 60, max: 72}
+bpm_step_max: 2.0
+swing: 0.5
+key_system: camelot
+keys:
+  start: ["D major", "A major", "E minor", "F major", "C# minor"]
+  moves: {"same": 3, "+1": 2, "-1": 2, "relative": 2, "+2 energy boost": 0}
+  minor_mode: dorian
+  major_mode: lydian
+segment:
+  target_minutes: 8.0
+  forms:
+    drift: [[intro, 16], [groove, 32], [peak, 24], [breakdown, 16], [outro, 16]]
+    swell: [[intro, 8], [build, 16], [peak, 32], [groove, 24], [outro, 16]]
+  transition: {type: fade, bars: 8, eq: false, bass_swap: false}
+section_types:
+  intro:     {energy: -0.20, mute: [lead]}
+  groove:    {energy: 0.0, mute: []}
+  build:     {energy: 0.05, mute: []}
+  peak:      {energy: 0.10, mute: []}
+  breakdown: {energy: -0.25, mute: [bass], add: [pad]}
+  outro:     {energy: -0.20, mute: [lead]}
+energy_curves:
+  tide:  [[0.0, 0.25], [0.30, 0.50], [0.60, 0.40], [0.85, 0.55], [1.0, 0.25]]
+  still: [[0.0, 0.30], [1.0, 0.35]]
+layers: {kick: 1.1, clap: 1.1, hat_closed: 1.1, hat_open: 1.1, perc: 0.45, ride: 1.1, bass: 0.0, chords: 0.0, pad: 0.0, lead: 0.3}
+drums:
+  patterns:
+    none_a: {kick: "", clap: "", hat_closed: "", hat_open: "", perc: "x...............", ride: ""}
+    none_b: {kick: "", clap: "", hat_closed: "", hat_open: "", perc: "........x.......", ride: ""}
+  fill: {}
+bass:
+  octave: 1
+  patterns:
+    drone:  "R---------------"
+    drone5: "R-------5-------"
+chords:
+  octave: 4
+  tones: [0, 4, 9]
+  extension: 6
+  progressions:
+    still_a: [0, 0, 3, 3]
+    still_b: [0, 4, 0, 3]
+    still_c: [0, 5, 3, 0]
+    still_d: [3, 4, 0, 0]
+  rhythms:
+    whole: "x---------------"
+lead:
+  octave: 5
+  motif_bars: [2]
+  notes_per_bar: [1, 2]
+  range_degrees: [0, 11]
+motif_pool: 8
+transforms: [identity, up2, down3, invert, retrograde, shift]
+no_repeat: {form: 1, drums: 1, bass: 1, progression: 3, chord_rhythm: 0, motif: 4}
+timbre:
+  kick:       {freq: 45, pitch_amount: 1.0, pitch_decay: 0.05, decay: 0.5, click: 0.0, level_db: -20}
+  clap:       {decay: 0.2, tone: 1500, level_db: -30}
+  hat_closed: {decay: 0.04, tone: 8000, level_db: -40}
+  hat_open:   {decay: 0.2, tone: 8000, level_db: -40}
+  perc:       {kind: bell, freq: 1200, decay: 2.0, level_db: -30}
+  ride:       {decay: 0.5, tone: 6000, level_db: -40}
+  bass:  {wave: sine, sub: 0.0, cutoff: 400, env_amount: 0.0, env_decay: 0.5, attack: 2.0, decay: 1.0, sustain: 0.9, release: 3.0, level_db: -15}
+  chords: {wave: saw, voices: 3, detune_cents: 10, cutoff: 800, env_amount: 0.2, env_decay: 2.0, attack: 2.5, decay: 2.0, sustain: 0.8, release: 3.0, level_db: -22, reverb: 0.6}
+  pad:   {wave: saw, voices: 3, detune_cents: 18, cutoff: 1200, env_amount: 0.2, env_decay: 2.0, attack: 3.0, decay: 2.0, sustain: 0.8, release: 3.0, level_db: -26, reverb: 0.7}
+  lead:  {wave: fm, voices: 1, cutoff: 4000, env_amount: 0.0, env_decay: 0.5, attack: 0.003, decay: 2.5, sustain: 0.0, release: 2.0, level_db: -22, reverb: 0.7, delay: 0.4, vibrato_cents: 0, fm_ratio: 3.5, fm_index: 2.0}
+  sidechain: {depth: 0.0, release: 0.2}
+  reverb: {seconds: 4.0}
+  texture: air
+neural:
+  prompt: "ambient drone, evolving pads, {key}, no drums"

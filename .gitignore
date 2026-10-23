@@ -11,3 +11,8 @@ node_modules/
 .idea/
 .vscode/
 *.egg-info/
+# long-form run output (audio, MIDI, caches)
+*.flac
+*.mid
+longform-out/
+longform-runs/
