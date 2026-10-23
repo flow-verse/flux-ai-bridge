@@ -12,7 +12,8 @@ beats = ["madmom"]
 # Generation backends. Weights are downloaded on demand after licence acceptance; none are bundled.
 # ACE-Step 1.5 is not on PyPI and needs Python 3.11 or 3.12; pinned to the commit benchmarked in docs/benchmarks/.
 ace-step = ["ace-step @ git+https://github.com/ace-step/ACE-Step-1.5@ca1e85fe9430179831e6bc6be790c332190a3866", "soundfile"]
-magenta-rt = ["magenta-rt[mlx]==2.0.3; sys_platform == 'darwin'", "magenta-rt[jax]==2.0.3; sys_platform != 'darwin'", "soundfile", "huggingface_hub"]
+# MLX is pinned: MLX 0.32 cannot import the .mlxfn files published for magenta-rt 2.0.3.
+magenta-rt = ["magenta-rt[mlx]==2.0.3; sys_platform == 'darwin'", "mlx==0.31.2; sys_platform == 'darwin'", "magenta-rt[jax]==2.0.3; sys_platform != 'darwin'", "soundfile", "huggingface_hub"]
 # stable-audio-3 pins torch==2.7.1 and transformers>=5.8, which conflict with ace-step: install it in its own venv.
 stable-audio-3 = ["stable-audio-3 @ git+https://github.com/Stability-AI/stable-audio-3", "soundfile"]
 amt = ["anticipation @ git+https://github.com/jthickstun/anticipation@af37397922665a0fb8d474d7988b0f3755a38d45", "torch", "transformers", "mido"]

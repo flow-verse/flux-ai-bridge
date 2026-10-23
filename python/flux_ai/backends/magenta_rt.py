@@ -35,6 +35,9 @@ TIERS = {"base": "mrt2_base", "small": "mrt2_small"}
 HF_REPO = "google/magenta-realtime-2"
 FRAME_RATE = 25
 SR = 48000
+# magenta-rt 2.0.3's uv.lock pins MLX 0.31.2; MLX 0.32.x fails to import the published
+# .mlxfn files with "[import_function] Invalid string size." (checked 2026-10-23).
+MLX_EXPORT_VERSION = "0.31.2"
 
 
 def magenta_base() -> Path:
@@ -81,6 +84,11 @@ class MagentaRTBackend:
             return False, "MLX not installed (needs Apple Silicon); the JAX path is not wired into this adapter"
         if not (platform.system() == "Darwin" and platform.machine() == "arm64"):
             return False, "the MLX path needs an Apple Silicon Mac"
+        from importlib.metadata import version
+
+        if version("mlx") != MLX_EXPORT_VERSION:
+            return False, (f"MLX {version('mlx')} cannot load the published MRT2 .mlxfn files; "
+                           f"install mlx=={MLX_EXPORT_VERSION} (the version magenta-rt 2.0.3 exports with)")
         return True, f"installed; weights in {magenta_base()} (downloaded on first use)"
 
     def _ensure_weights(self, size: str, progress) -> None:
@@ -106,7 +114,18 @@ class MagentaRTBackend:
             from magenta_rt import MagentaRT2StdMlxfn
 
             report(progress, 0.04, f"loading {size} (MLX)")
-            self._systems[size] = MagentaRT2StdMlxfn(size=size)
+            try:
+                self._systems[size] = MagentaRT2StdMlxfn(size=size)
+            except RuntimeError as e:
+                if "import_function" in str(e):
+                    import mlx.core as mx
+
+                    raise RuntimeError(
+                        f"{e} The published .mlxfn files were exported with MLX {MLX_EXPORT_VERSION}; "
+                        f"this environment has MLX {mx.__version__}. Install mlx=={MLX_EXPORT_VERSION} "
+                        "(newer MLX cannot read them)."
+                    ) from e
+                raise
         return self._systems[size]
 
     def generate(self, req: GenerateRequest, progress: Callable[[float, str], None] | None = None) -> GenerateResult:
