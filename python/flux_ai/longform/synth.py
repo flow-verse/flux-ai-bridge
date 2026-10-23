@@ -128,7 +128,8 @@ def drum_oneshot(kind: str, p: dict, sr: int, rng: np.random.Generator) -> np.nd
         f0 = p.get("freq", 50)
         f = f0 * (1 + p.get("pitch_amount", 3) * np.exp(-t / p.get("pitch_decay", 0.04)))
         body = np.sin(2 * np.pi * np.cumsum(f) / sr) * np.exp(-t / dec)
-        click = bp(rng.standard_normal(n), 3000, sr, 0.7) * np.exp(-t / 0.004) * np.clip(t / 0.001, 0, 1) * p.get("click", 0.2)
+        # deterministic tonal click (a noise click can produce isolated single-sample spikes)
+        click = np.sin(2 * np.pi * 1800 * t) * np.exp(-t / 0.003) * np.clip(t / 0.001, 0, 1) * p.get("click", 0.2)
         x = body + click
         if k == "doum":
             x += 0.3 * bp(rng.standard_normal(n), 300, sr, 2) * np.exp(-t / 0.02)

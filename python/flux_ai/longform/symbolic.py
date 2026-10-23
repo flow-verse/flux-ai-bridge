@@ -122,9 +122,12 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
             return False
         if n_ph < 2 or s["type"] not in ("intro", "outro") or len(order) < 2:
             return True
-        k = round((b // 8) * (len(order) - 1) / (n_ph - 1))
-        i = order.index(layer)
-        return i <= k if s["type"] == "intro" else i < len(order) - k
+        # never fewer than two layers: a bare kick is identical in every segment
+        n_on = 2 + round((b // 8) * (len(order) - 2) / (n_ph - 1))
+        if s["type"] == "outro":
+            n_on = len(order) + 2 - n_on
+        return order.index(layer) < n_on
+
     seeds = s["seeds"]
     bars = s["bars"]
     bp = s["bar_plan"]
