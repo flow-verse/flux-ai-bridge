@@ -45,7 +45,7 @@ def register(sub) -> None:
 
 def run_cli(a: argparse.Namespace) -> int:
     use_json = bool(getattr(a, "json", False) or getattr(a, "longform_json", False))
-    job_id = uuid.uuid4().hex[:12]
+    job_id = getattr(a, "job_id", None) or uuid.uuid4().hex[:12]
 
     def emit(event: str, **kw) -> None:
         if use_json:
