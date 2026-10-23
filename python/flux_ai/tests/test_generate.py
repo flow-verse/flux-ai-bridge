@@ -275,9 +275,18 @@ def test_serve_runs_jobs_and_keeps_going_after_errors(tmp_path, capsys):
 
 
 def test_serve_cli_entry(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr("sys.stdin", io.StringIO('{"job":"shutdown"}\n'))
-    assert cli.main(["--json", "serve"]) == 0
-    assert [e["event"] for e in events(capsys)] == ["ready", "bye"]
+    for argv in (["--json", "serve"], ["serve", "--json"]):
+        monkeypatch.setattr("sys.stdin", io.StringIO('{"job":"shutdown"}\n'))
+        assert cli.main(argv) == 0
+        assert [e["event"] for e in events(capsys)] == ["ready", "bye"]
+
+
+def test_json_flag_after_subcommand(tmp_path, capsys):
+    out = tmp_path / "t.wav"
+    assert cli.main(["generate", "--backend", "sine-test", "--prompt", "p", "--seconds", "1", "--out", str(out),
+                     "--json", "--job-id", "late"]) == 0
+    ev = events(capsys)
+    assert ev[-1]["event"] == "done" and all(e["job_id"] == "late" for e in ev)
 
 
 # --- end to end in a real process -------------------------------------------------------

@@ -97,6 +97,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     bn = sub.add_parser("bench", help="benchmark generation backends (see flux_ai.bench)")
     bn.add_argument("bench_args", nargs=argparse.REMAINDER)
+    # Global flags are also accepted after the subcommand (`flux-ai generate … --json`).
+    for sp in sub.choices.values():
+        sp.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+        sp.add_argument("--job-id", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     return p
 
 
