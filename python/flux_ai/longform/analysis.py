@@ -140,3 +140,28 @@ def find_discontinuities(x: np.ndarray, sr: int, ratio: float = 2.5, floor: floa
     g = max(1, int(guard_ms * 1e-3 * sr))
     ref = np.maximum(_shifted_max(d, -w, -g), _shifted_max(d, g, w))
     return np.where((d > floor) & (d > ratio * ref))[0]
+
+
+def click_in_sources(sample: int, sources: list[tuple[Path, int, int]], sr: int, tol: int = 2) -> bool:
+    """True if a click found at `sample` of the assembled set is already in one of the section renders.
+
+    `sources` are (section mix path, global start sample, frames). A click the
+    instrument itself produced (e.g. a test synth's hard note-off) is present in
+    the section file at the same local position; a click the stitching
+    introduced (a hard cut, a gain step) is not.
+    """
+    import soundfile as sf
+
+    ctx = int(0.15 * sr)
+    for path, start, frames in sources:
+        local = sample - start
+        if not 0 <= local < frames:
+            continue
+        a = max(0, local - ctx)
+        with sf.SoundFile(str(path)) as f:
+            f.seek(a)
+            x = f.read(2 * ctx, dtype="float64", always_2d=True)
+        # level-independent: the section file is stored before the master gain, so only the ratio test counts
+        if any(abs(a + k - local) <= tol for k in find_discontinuities(x, sr, floor=1e-4)):
+            return True
+    return False

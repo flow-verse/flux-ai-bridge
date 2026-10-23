@@ -2,8 +2,8 @@
 """Section renderers: section MIDI + section plan -> audio file.
 
 `BuiltinSynthRenderer` is a pure numpy/scipy placeholder so the pipeline runs
-anywhere, faster than real time. `FluxHostRenderer` is the stub for the real
-path (flux-host offline render, phase P1).
+anywhere, faster than real time. `FluxHostRenderer` (fluxhost.py) renders the
+pitched layers through flux-host's headless engine (`flux-engine serve`).
 
 Contract: `render(section_midi, section_plan, out_wav)` writes the stereo mix
 of the section to `out_wav` (format from the extension; FLAC/WAV) starting at
@@ -17,8 +17,6 @@ from __future__ import annotations
 
 import abc
 import bisect
-import shutil
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -53,6 +51,17 @@ class ParsedNote:
     bright: float  # 0..1 from CC74 at note-on
 
 
+@dataclass
+class SynthOutput:
+    low: np.ndarray      # (n, 2) float32: kick + bass
+    high: np.ndarray     # (n, 2) float32: everything else, effects included
+    duck: np.ndarray     # (n,) sidechain gain from the kick (1 = no ducking)
+    frames: int
+    body_frames: int
+    tail: float
+    notes: int
+
+
 class Renderer(abc.ABC):
     name = "abstract"
     version = "0"
@@ -66,6 +75,9 @@ class Renderer(abc.ABC):
 
     @abc.abstractmethod
     def render(self, section_midi: Path, section_plan: dict, out_wav: Path) -> RenderResult: ...
+
+    def close(self) -> None:
+        """Release external resources (engine processes). Safe to call more than once."""
 
 
 def parse_midi(path: Path) -> tuple[list[ParsedNote], float]:
@@ -146,16 +158,27 @@ class BuiltinSynthRenderer(Renderer):
         src = Path(synth.__file__).read_bytes() + Path(__file__).read_bytes()
         return {**super().identity(), "code": hashlib.sha256(src).hexdigest()[:12]}
 
-    def render(self, section_midi: Path, section_plan: dict, out_wav: Path) -> RenderResult:
-        import soundfile as sf
+    def tail_for(self, section_plan: dict) -> float:
+        """Seconds rendered after the body: the reverb tail plus a margin, at least tail_seconds."""
+        tim = genres.load(section_plan["genre"])["timbre"]
+        reverb_s = float(tim.get("reverb", {}).get("seconds", 1.8))
+        return max(self.tail_seconds, min(reverb_s + 1.0, 8.0))
 
+    def synthesize(self, notes: list[ParsedNote], body_s: float, section_plan: dict,
+                   tracks: set[str] | None = None) -> SynthOutput:
+        """Render `notes` (all tracks, or only those in `tracks`) to unscaled float32 buffers.
+
+        Also returns the kick-driven sidechain envelope, so a caller that renders
+        some layers elsewhere (FluxHostRenderer) can duck them the same way.
+        """
         sr = self.sample_rate
         g = genres.load(section_plan["genre"])
         tim = g["timbre"]
         rng = np.random.default_rng(section_plan["seeds"].get("render", section_plan["seeds"]["section"]))
-        notes, body_s = parse_midi(Path(section_midi))
+        if tracks is not None:
+            notes = [x for x in notes if x.track in tracks]
         reverb_s = float(tim.get("reverb", {}).get("seconds", 1.8))
-        tail = max(self.tail_seconds, min(reverb_s + 1.0, 8.0))
+        tail = self.tail_for(section_plan)
         body = int(round(body_s * sr))
         n = body + int(tail * sr)
         low = np.zeros((n, 2), dtype=np.float32)    # kick + bass
@@ -227,64 +250,43 @@ class BuiltinSynthRenderer(Renderer):
             for c in range(2):
                 high[:, c] = synth.lp(high[:, c], float(tim["lowpass_master"]), sr).astype(np.float32)
 
-        # fade the very end of the tail so cached audio always ends at zero
-        f = int(0.5 * sr)
-        ramp = np.linspace(1, 0, f, dtype=np.float32)[:, None]
-        low[-f:] *= ramp
-        high[-f:] *= ramp
-        mix = low + high
-        peak = float(max(np.max(np.abs(mix)), np.max(np.abs(low)), 1e-9))
-        scale = min(1.0, 0.98 / peak)
-        out_wav = Path(out_wav)
-        low_path = out_wav.with_name(out_wav.stem + ".low" + out_wav.suffix)
-        sub = "PCM_24"
-        sf.write(str(out_wav), mix * scale, sr, subtype=sub)
-        sf.write(str(low_path), low * scale, sr, subtype=sub)
-        return RenderResult(out_wav, low_path, sr, n, body, scale,
-                            {"notes": len(notes), "peak": peak, "tail_seconds": tail})
-
-
-class FluxHostRenderer(Renderer):
-    """STUB: renders a section through flux-host (phase P1, not available yet).
-
-    Intended implementation once `flux-host render` exists:
-        flux-host render --project <section project or MIDI import> \
-            --range bars:0-<bars> --tail <s> --sample-rate 48000 \
-            --stems kick,bass,other --out <out_wav>
-    with CLAP plugins in offline mode and instruments picked from the section's
-    genre timbre table (Surge XT presets via preset discovery). It must keep the
-    same contract as BuiltinSynthRenderer: mix at `out_wav`, optional
-    `<stem>.low.<ext>`, `body + tail` long, starting at bar 0.
-    """
-
-    name = "flux-host"
-    version = "0-stub"
-
-    def __init__(self, binary: str = "flux-host", **kw):
-        super().__init__(**kw)
-        self.binary = binary
-
-    def available(self) -> tuple[bool, str]:
-        if shutil.which(self.binary) is None:
-            return False, f"{self.binary} not on PATH"
-        try:
-            out = subprocess.run([self.binary, "render", "--help"], capture_output=True, text=True, timeout=20)
-        except Exception as e:  # pragma: no cover - depends on the machine
-            return False, str(e)
-        if out.returncode != 0:
-            return False, "flux-host has no 'render' command yet (phase P1)"
-        return True, ""
+        return SynthOutput(low, high, duck, n, body, tail, len(notes))
 
     def render(self, section_midi: Path, section_plan: dict, out_wav: Path) -> RenderResult:
-        raise NotImplementedError("FluxHostRenderer is a stub until flux-host gains a headless "
-                                  "`render` command (phase P1); use BuiltinSynthRenderer")
+        notes, body_s = parse_midi(Path(section_midi))
+        o = self.synthesize(notes, body_s, section_plan)
+        return write_section(out_wav, o.low, o.high, self.sample_rate, o.body_frames, {"notes": o.notes, "tail_seconds": o.tail})
 
 
-RENDERERS = {"builtin": BuiltinSynthRenderer, "builtin-synth": BuiltinSynthRenderer, "flux-host": FluxHostRenderer}
+def write_section(out_wav: Path, low: np.ndarray, high: np.ndarray, sr: int, body: int, stats: dict) -> RenderResult:
+    """Fade the tail end, scale to fit 24-bit storage, write `out_wav` and `<stem>.low.<ext>`."""
+    import soundfile as sf
+
+    # fade the very end of the tail so cached audio always ends at zero
+    f = min(int(0.5 * sr), len(low))
+    ramp = np.linspace(1, 0, f, dtype=np.float32)[:, None]
+    low[-f:] *= ramp
+    high[-f:] *= ramp
+    mix = low + high
+    peak = float(max(np.max(np.abs(mix)), np.max(np.abs(low)), 1e-9))
+    scale = min(1.0, 0.98 / peak)
+    out_wav = Path(out_wav)
+    low_path = out_wav.with_name(out_wav.stem + ".low" + out_wav.suffix)
+    sub = "PCM_24"
+    sf.write(str(out_wav), mix * scale, sr, subtype=sub)
+    sf.write(str(low_path), low * scale, sr, subtype=sub)
+    return RenderResult(out_wav, low_path, sr, len(mix), body, scale, {**stats, "peak": peak})
+
+
+RENDERERS = {"builtin": BuiltinSynthRenderer, "builtin-synth": BuiltinSynthRenderer}
 
 
 def get_renderer(name: str, **kw) -> Renderer:
+    if name == "flux-host":
+        from .fluxhost import FluxHostRenderer
+
+        return FluxHostRenderer(**kw)
     try:
         return RENDERERS[name](**kw)
     except KeyError:
-        raise KeyError(f"unknown renderer {name!r}; choose from {sorted(RENDERERS)}") from None
+        raise KeyError(f"unknown renderer {name!r}; choose from {sorted([*RENDERERS, 'flux-host'])}") from None

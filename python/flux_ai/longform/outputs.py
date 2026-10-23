@@ -194,8 +194,47 @@ def sha256_file(path: Path, chunk: int = 1 << 22) -> str:
     return h.hexdigest()
 
 
+DECISION_LOG_NOTE = (
+    "Ordered log of decisions that shaped this audio. 'human' entries come from the plan's human_decisions "
+    "(genre, duration, seed, plan edits recorded by the caller). 'agent' entries are the flux-engine agent "
+    "turns the flux-host renderer made while building each section's project (labels from end_agent_turn, "
+    "plus the engine's get_history summary); they are automated, not human. 'human_review' is empty until "
+    "a human-review step records who listened, when, the verdict per section and any edits (as further "
+    "engine turns or plan changes).")
+
+
+def decision_log(plan: dict, metas: list[dict], section_dirs: list) -> dict:
+    """The human-decision log: human plan decisions, then per-section engine agent turns (flux-host)."""
+    entries = [{"actor": "human", "source": "plan.human_decisions", "decision": d}
+               for d in plan.get("human_decisions", [])]
+    history = {}
+    for meta, d in zip(metas, section_dirs):
+        eng = (meta.get("stats") or {}).get("engine")
+        if not eng:
+            continue
+        sid = meta["id"]
+        history[sid] = {"get_history": eng.get("history"), "project": f"{d}/{eng.get('project', 'project')}"}
+        for t in eng.get("turns", []):
+            entries.append({"actor": "agent", "source": "flux-engine", "section": sid, "turn": t.get("label"),
+                            "recorded": t.get("recorded")})
+    return {"schema": "flux.decision_log/0.1", "note": DECISION_LOG_NOTE, "entries": entries,
+            "engine_history": history, "human_review": None}
+
+
+def section_rendering(metas: list[dict]) -> dict:
+    """Per-section instruments and engine version, for renderers that report them (flux-host)."""
+    out = {}
+    for m in metas:
+        st = m.get("stats") or {}
+        if "plugins" in st:
+            out[m["id"]] = {"plugins": st["plugins"], "engine_api_version": (st.get("engine") or {}).get("api_version"),
+                            "conversion": st.get("conversion")}
+    return out
+
+
 def provenance(plan: dict, renderer: dict, neural_records: list[dict], master: dict, outputs: dict,
-               disclosure: str, genre_tables: dict, versions: dict) -> dict:
+               disclosure: str, genre_tables: dict, versions: dict, decision_log: dict | None = None,
+               section_rendering: dict | None = None) -> dict:
     neural_used = [r for r in neural_records if r.get("status") == "ok"]
     return {
         "schema": "flux.provenance/0.1",
@@ -206,7 +245,11 @@ def provenance(plan: dict, renderer: dict, neural_records: list[dict], master: d
         "ddex_style_ai_disclosure": {
             "note": "DDEX-style fields; exact DDEX field names still need verifying against DDEX primary sources (P6).",
             "composition": "AI/algorithmic (seeded planner + symbolic generator)",
-            "instrumentation": "synthesized" + (" + neural audio layers" if neural_used else ""),
+            "instrumentation": ("synthesized" if renderer.get("name") != "flux-host" else
+                                "plugin instruments in flux-host (" + ", ".join(sorted({p.get("name", "?") for p in
+                                (renderer.get("plugins") or {}).values()})) + ")"
+                                + ("" if renderer.get("drums") == "plugin" else " + built-in synthesized drums"))
+                               + (" + neural audio layers" if neural_used else ""),
             "vocals": "none",
             "post_production": "automated loudness normalisation and true-peak limiting",
         },
@@ -223,6 +266,9 @@ def provenance(plan: dict, renderer: dict, neural_records: list[dict], master: d
         "models": sorted({(r.get("result_backend", r["backend"]), r.get("model", "?"),
                            (r.get("provenance") or {}).get("licence", "unknown")) for r in neural_used}),
         "human_decisions": plan.get("human_decisions", []),
+        "decision_log": decision_log or {"schema": "flux.decision_log/0.1", "note": DECISION_LOG_NOTE,
+                                         "entries": [], "engine_history": {}, "human_review": None},
+        "section_rendering": section_rendering or {},
         "mastering": master,
         "outputs": outputs,
         "plan": plan,

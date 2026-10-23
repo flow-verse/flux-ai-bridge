@@ -4,6 +4,7 @@
     flux-ai longform --genre "deep house" --hours 1 --out runs/dh1
     flux-ai longform --genre techno --hours 4 --plan-only --out runs/t4
     flux-ai longform --plan runs/t4/plan.json --out runs/t4 --json
+    flux-ai longform --genre "deep house" --hours 1 --renderer flux-host --flux-plugin default="Surge XT"
 
 With --json, stdout carries only JSON lines in job protocol v2:
     {"event": "started",  "protocol_version": 2, "job": "longform", "job_id": "...", ...}
@@ -38,7 +39,16 @@ def register(sub) -> None:
     p.add_argument("--format", default="auto", choices=["auto", "wav", "flac", "rf64"],
                    help="auto: 24-bit WAV below 4 h, FLAC from 4 h")
     p.add_argument("--workers", type=int, default=None)
-    p.add_argument("--renderer", default="builtin", choices=["builtin", "flux-host"])
+    p.add_argument("--renderer", default="builtin", choices=["builtin", "flux-host"],
+                   help="builtin: numpy synth (default). flux-host: pitched layers through flux-engine serve")
+    p.add_argument("--flux-engine", default=None, metavar="PATH",
+                   help="flux-engine binary for --renderer flux-host (default: $FLUX_ENGINE, then PATH)")
+    p.add_argument("--flux-plugin", action="append", default=[], metavar="LAYER=ID",
+                   help="instrument for a layer (drums, bass, chords, pad, lead, or default for all pitched "
+                        "layers), by plugin id or exact name; repeatable. Default: $FLUX_LONGFORM_PLUGIN or Surge XT. "
+                        "Drums use the built-in synth unless drums=ID is given")
+    p.add_argument("--flux-block", type=int, default=None, metavar="N",
+                   help="flux-engine render block length (engine default 1024)")
     p.add_argument("--json", dest="longform_json", action="store_true", help="JSON-lines events (job protocol v2)")
     p.set_defaults(func=run_cli)
 
@@ -83,13 +93,24 @@ def run_cli(a: argparse.Namespace) -> int:
             if not use_json:
                 print(plan_path)
             return 0
-        renderer = get_renderer(a.renderer)
         if a.renderer == "flux-host":
+            from .fluxhost import parse_plugin_specs
+
+            renderer = get_renderer("flux-host", sample_rate=int(sp.data.get("sample_rate", 48000)),
+                                    engine=a.flux_engine, plugins=parse_plugin_specs(a.flux_plugin), block=a.flux_block)
             ok, why = renderer.available()
             if not ok:
+                renderer.close()
                 raise RuntimeError(f"flux-host renderer unavailable: {why}")
-        report = pipeline.run(sp, a.out, renderer=renderer, workers=a.workers, fmt=a.format,
-                              progress=lambda stage, frac, msg="": emit("progress", stage=stage, fraction=round(frac, 4), message=msg))
+        else:
+            if a.flux_plugin or a.flux_engine:
+                raise ValueError("--flux-plugin/--flux-engine need --renderer flux-host")
+            renderer = get_renderer(a.renderer)
+        try:
+            report = pipeline.run(sp, a.out, renderer=renderer, workers=a.workers, fmt=a.format,
+                                  progress=lambda stage, frac, msg="": emit("progress", stage=stage, fraction=round(frac, 4), message=msg))
+        finally:
+            renderer.close()
     except Exception as e:
         emit("error", message=f"{type(e).__name__}: {e}")
         if not use_json:

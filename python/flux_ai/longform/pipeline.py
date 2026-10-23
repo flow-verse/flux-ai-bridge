@@ -189,6 +189,8 @@ def run(plan: planner.SetPlan | dict, out_dir: Path, renderer: Renderer | None =
     workers = workers if workers is not None else max(1, min(8, (os.cpu_count() or 2) - 2))
     rendered = 0
     custom = type(renderer) not in (BuiltinSynthRenderer,)
+    if custom:  # other renderers run in this process, one section at a time (flux-host: one warm engine)
+        workers = 1
     if workers <= 1 or custom or len(todo) <= 1:
         for i in todo:
             if max_renders is not None and rendered >= max_renders:
@@ -213,9 +215,10 @@ def run(plan: planner.SetPlan | dict, out_dir: Path, renderer: Renderer | None =
 
     # 4. assemble transitions + master (streaming)
     t = time.time()
-    audio = []
+    audio, metas = [], []
     for i, d in enumerate(dirs):
         meta = json.loads((d / "meta.json").read_text())
+        metas.append(meta)
         audio.append(transitions.SectionAudio(i, d / "mix.flac", d / "mix.low.flac", meta["scale"], meta["frames"]))
     tl = transitions.Timeline(data, audio, sr)
     total_seconds = tl.total / sr
@@ -256,6 +259,10 @@ def run(plan: planner.SetPlan | dict, out_dir: Path, renderer: Renderer | None =
                 for k in analysis.find_discontinuities(x, sr):
                     if abs(a + k - pos) <= int(0.05 * sr):
                         clicks.append({"join": f"{j['from']}->{j['to']}", "sample": int(a + k)})
+    # a click that is already in a section render came from the instrument, not from the join
+    sources = [(p.audio.mix, p.start, p.audio.frames) for p in tl.placed]
+    inherited = [c for c in clicks if analysis.click_in_sources(c["sample"], sources, sr)]
+    clicks = [c for c in clicks if c not in inherited]
     sim = analysis.self_similarity(tmp_master, tl.bar_starts(), threshold=similarity_threshold)
     (out / "similarity.json").write_text(json.dumps(sim, indent=1))
     stages["analysis"] = time.time() - t
@@ -274,7 +281,9 @@ def run(plan: planner.SetPlan | dict, out_dir: Path, renderer: Renderer | None =
     os.replace(tmp_master, master_path)
     prov = outputs.provenance(data, rid, list(neural_recs.values()), master_info,
                               {"master": master_path.name, "cue": f"{slug}.cue", "chapters": "chapters.txt"},
-                              disclosure, gtabs, _versions())
+                              disclosure, gtabs, _versions(),
+                              decision_log=outputs.decision_log(data, metas, [d.relative_to(out) for d in dirs]),
+                              section_rendering=outputs.section_rendering(metas))
     prov_text = json.dumps(prov, indent=1, default=str)
     (out / "provenance.json").write_text(prov_text)
     fields = outputs.tag_fields(title, data["genre"], disclosure, hashlib.sha256(prov_text.encode()).hexdigest(), data)
@@ -301,6 +310,7 @@ def run(plan: planner.SetPlan | dict, out_dir: Path, renderer: Renderer | None =
         "loudness_in_spec": bool(abs(mres.lufs - float(tgt.get("lufs", -14.0))) <= float(tgt.get("lufs_tolerance", 0.5))),
         "true_peak_in_spec": bool(mres.true_peak_dbtp <= float(tgt.get("true_peak_dbtp", -1.0))),
         "join_clicks": len(clicks), "join_click_samples": clicks[:20], "joins_checked": len(joins),
+        "section_clicks_near_joins": len(inherited), "section_click_samples": inherited[:20],
         "similarity": {k: sim.get(k) for k in ("windows", "threshold", "max_nonadjacent", "flag_count", "percentiles")},
         "neural_layers": {"requested": len(neural_recs), "used": len(neural_used),
                           "skipped": [r.get("reason") for r in neural_recs.values() if r.get("status") == "skipped"]},
