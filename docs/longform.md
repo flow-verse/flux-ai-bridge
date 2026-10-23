@@ -1,11 +1,12 @@
 # Long-form orchestrator (`flux-ai longform`, phase P5)
 
 Generates hours of music in one genre as a single mastered file with chapters,
-a cue sheet and an AI-disclosure provenance record. It does not need
-flux-host, a DAW or plugins: it plans the set, writes every section as MIDI on
-an exact beat grid and renders it with a small built-in numpy/scipy synth. When
-flux-host gains a headless render command (P1), `FluxHostRenderer` takes the
-synth's place and nothing else changes.
+a cue sheet and an AI-disclosure provenance record. It plans the set, writes
+every section as MIDI on an exact beat grid and renders it either with a small
+built-in numpy/scipy synth (default; needs no DAW or plugins) or, with
+`--renderer flux-host`, through flux-host's headless engine with plugin
+instruments (see [flux-host renderer](#flux-host-renderer)). Transitions,
+mastering, checks and outputs are the same for both.
 
 ## Install and run
 
@@ -19,10 +20,13 @@ flux-ai longform --genre "deep house" --hours 1 --seed 1 --out runs/dh-1h
 flux-ai longform --genre techno --hours 4 --plan-only --out runs/t4     # write plan.json only
 flux-ai longform --plan runs/t4/plan.json --out runs/t4 --json          # execute an (edited) plan
 flux-ai longform --genre lofi --hours 2 --neural-backend ace-step       # optional neural layers
+flux-ai longform --genre "deep house" --hours 1 --renderer flux-host \
+    --flux-plugin default="Surge XT"                                     # plugin instruments via flux-engine
 ```
 
 Options: `--seed N`, `--format auto|wav|flac|rf64`, `--workers N`,
-`--neural-sections breakdown,peak|all`, `--renderer builtin|flux-host`.
+`--neural-sections breakdown,peak|all`, `--renderer builtin|flux-host`,
+`--flux-engine PATH`, `--flux-plugin LAYER=ID` (repeatable), `--flux-block N`.
 Genres shipped: `deep house`, `techno`, `lo-fi hip hop` (`lofi`), `ambient`,
 `maqam groove` (`maqam`, `bayati`, `hijaz`). Extra or overriding tables can be
 put in a directory listed in `$FLUX_LONGFORM_GENRES`.
@@ -49,10 +53,10 @@ keeps working.
 | `<title>.wav` / `.flac` | Master, 48 kHz stereo 24-bit. WAV below 4 h; FLAC (default) or RF64 (`--format rf64`) at 4 h and above, because a 24-bit stereo WAV hits the 4 GiB RIFF limit at about 4.1 h. |
 | `<title>.cue` | Cue sheet, one track per segment. |
 | `chapters.txt` | YouTube-style chapter list (`0:00:00 Part 1 - A minor (8A) - 122 BPM`). Chapter times sit at the bass swap of each transition, where the new part is heard. |
-| `provenance.json` | Full plan, all seeds, genre-table hashes, renderer and generator versions, neural backends/models/licences with their verification results, mastering figures, a DDEX-style AI field block, and `human_decisions` (copied from the plan). |
-| `report.json` | Wall clock per stage, speed factor, loudness, true peak, limiter reduction, join-click count, similarity summary, file sizes, peak RSS. |
+| `provenance.json` | Full plan, all seeds, genre-table hashes, renderer identity (for flux-host: engine API version, binary, plugin ids), per-section instruments (`section_rendering`), generator version, neural backends/models/licences with their verification results, mastering figures, a DDEX-style AI field block, `human_decisions` (copied from the plan) and the `decision_log` (see below). |
+| `report.json` | Wall clock per stage, speed factor, loudness, true peak, limiter reduction, join clicks (`join_clicks`: clicks the stitching introduced; `section_clicks_near_joins`: clicks near a join that are already in a section render, i.e. made by the instrument), similarity summary, file sizes, peak RSS. |
 | `similarity.json` | Self-similarity report (see below). |
-| `plan.json`, `midi/`, `sections/`, `neural/` | Executed plan, section MIDI, checkpoint cache. |
+| `plan.json`, `midi/`, `sections/`, `neural/` | Executed plan, section MIDI, checkpoint cache. With flux-host, each `sections/<id>-<hash>/project/` is the saved engine project of that section, which opens in Flux for review. |
 
 Embedded disclosure: FLAC gets Vorbis comments `AI_GENERATED=1`,
 `AI_DISCLOSURE`, `AI_SYSTEM`, `AI_PLAN_SEED`, `PROVENANCE_SHA256`,
@@ -107,10 +111,11 @@ allowed for annotations.
    symbolic layers. Unavailable backends or failed beat checks skip the layer
    and the reason is logged in provenance. Key detection is recorded but does
    not gate.
-4. **Render** (`render.py`, `synth.py`). `Renderer.render(section_midi,
+4. **Render** (`render.py`, `synth.py`, `fluxhost.py`). `Renderer.render(section_midi,
    section_plan, out_wav)` writes the section mix and a `low` stem (kick +
-   bass), bar 0 to end of body plus a release/reverb tail. Sections render in
-   parallel processes.
+   bass), bar 0 to end of body plus a release/reverb tail. Built-in sections
+   render in parallel processes; flux-host sections render one at a time
+   through one warm engine.
 5. **Transitions** (`transitions.py`). Tempo is stored per beat as integer
    microseconds, so overlapping sections are sample-aligned. `blend`: high
    band (mix − low) equal-power crossfade over the overlap, low band swapped
@@ -135,10 +140,86 @@ allowed for annotations.
 
 Each section is cached as `sections/<id>-<hash>/` where the hash covers the
 section plan, its MIDI bytes, the genre table, the renderer identity
-(including a digest of the synth code) and the neural layer audio. A section
+(including a digest of the synth code; for flux-host also the engine binary's
+size and mtime, its API version, block length and the resolved plugin ids and
+versions) and the neural layer audio. A section
 directory appears only after its render completes (atomic rename). Rerunning
 the same command after a crash or kill re-renders only missing sections, then
 re-masters (mastering is a whole-file pass and is not checkpointed).
+
+## flux-host renderer
+
+`--renderer flux-host` (`fluxhost.py`, `FluxHostRenderer`) plays the pitched
+layers (bass, chords, pad, lead) with plugin instruments in flux-host's headless
+engine, `flux-engine serve` (JSON-RPC over stdio; flux-host
+`flux/engine/API.md`). The client is `flux_ai.engine_client.EngineClient`, the
+same supervised client flux-mcp uses (`flux_mcp.engine` re-exports it). One
+engine process stays up for the whole run. If it crashes, it is restarted and
+the section is rendered again from scratch. The engine binary comes from
+`--flux-engine`, else `$FLUX_ENGINE`, else `PATH`; plugins are found through
+the engine's usual folders plus `$FLUX_CLAP_PATH`.
+
+Per section:
+
+1. `create_project` in `sections/<id>-<hash>/project` at the section tempo.
+2. Agent turn `longform <id>: instruments`: one `add_track` per layer that has
+   notes, with its instrument.
+3. Agent turn `longform <id>: notes`: one `write_notes` clip per layer from
+   bar 1, covering body + tail; `set_range` to the same bars.
+4. `get_history`, `save_project`, then `render` of exactly body + tail seconds
+   (the body already includes the transition overlaps) as a 48 kHz 32-bit float
+   WAV with per-track stems. The stems are mixed in Python, faded at the tail
+   end and written as `mix.flac`/`mix.low.flac` exactly like the built-in
+   renderer's, so transitions and mastering consume them unchanged.
+
+**Timing.** The project runs at the section's constant tempo. Note times come
+from the section MIDI in seconds (its tempo map carries the per-beat ramps in
+transitions) and are converted to beats at that tempo, rounded to the engine's
+960 PPQ. The audio therefore sits on the plan's microsecond grid, just like the
+built-in synth's. Tempo-synced plugin features follow the constant tempo, so
+they drift slightly inside a ramp.
+
+**Instruments.** Plugins are named by id or exact name (as `list_plugins`
+reports them). Precedence per layer: `--flux-plugin LAYER=ID`, then the genre
+table's `flux_host.plugins.LAYER`, then `--flux-plugin default=ID`, then the
+genre table's `flux_host.plugins.default`, then `$FLUX_LONGFORM_PLUGIN`, then
+`Surge XT` (the intended instrument; flux-installer issue #5). A missing plugin
+fails before rendering, with the list of instruments the engine found. Layer
+levels: the genre table's optional `flux_host.gain_db.LAYER`, else the timbre
+table's `level_db` relative to the bass. This keeps the table's balance between
+layers and lets the plugin's own output set the absolute level. No shipped
+genre table has a `flux_host` block yet.
+
+**Drums.** Unless a drum instrument is configured (`--flux-plugin drums=ID` or
+`flux_host.plugins.drums`), drums stay on the built-in synth (with its drum
+reverb and the genre's texture, e.g. lo-fi vinyl) and are mixed with the engine
+stems. The built-in kick also drives the genre's sidechain ducking of the
+engine layers. With a drum instrument, the kick (GM 36) gets its own track so
+the `low` stem can still be formed, and no built-in audio is used.
+
+**Not carried yet** (engine API gaps, counted in each section's `meta.json` →
+`stats.conversion`): pitch bend (maqam quarter tones are rounded to the nearest
+semitone), CC74 brightness automation, and presets (there is no `load_preset`,
+so each plugin plays its default patch).
+
+### Decision log (provenance)
+
+`provenance.json` → `decision_log` (`flux.decision_log/0.1`) is the start of
+the human-decision log. It holds, in order:
+
+- `actor: human` entries copied from the plan's `human_decisions` (genre,
+  duration, seed and plan edits that the caller recorded);
+- `actor: agent` entries for every flux-engine agent turn the renderer made,
+  per section (`Agent: longform s012: instruments`, `… notes`), plus each
+  section's `get_history` result and the path of its saved project
+  (`engine_history`). These are automated steps, not human decisions;
+- `human_review: null`.
+
+What it does not hold yet: any human listening or approval. A human-review step
+would fill `human_review` with who reviewed, when, the verdict per section
+(approve, redo or edited) and any edits, recorded as further engine agent turns
+on the saved section projects (so `get_history` shows them) or as plan changes
+with a new plan hash. The disclosure text counts only `human_decisions`.
 
 ## Measured results
 
@@ -168,8 +249,8 @@ output directory (measured on 2026-10-23 at commit `9c2649e`).
   the symbolic core in 8 processes runs at roughly 170–200× real time.
 - Compared with the worked example in the report (target ≥ 10× real time for
   the symbolic core, about 1 h total for 4 h symbolic-only): the built-in
-  synth path takes about 8 minutes for 4 h. This says nothing yet about
-  flux-host + Surge XT render speed, which P1 still has to measure.
+  synth path takes about 8 minutes for 4 h. The flux-host path with Test Synth
+  is measured below; flux-host + Surge XT is not measured yet.
 - **Resume after SIGKILL** (techno 1 h, 71 sections): the run was killed with
   31 sections cached and 8 half-written `.tmp` section directories. Rerunning
   the same command removed the partial directories, rendered only the
@@ -186,12 +267,53 @@ output directory (measured on 2026-10-23 at commit `9c2649e`).
 - RF64 output is covered by a unit test (write, iXML append, read back) but
   was not used for a full 4 h run; the 4 h run used the default FLAC path.
 
+### flux-host renderer, 10 minutes of deep house
+
+Same machine, measured on 2026-10-23 (load average about 3). Each run was one
+unattended command from an empty directory: `--genre "deep house" --hours
+0.1666667 --seed 1` (0:10:11, 14 sections, 13 joins). flux-host used **Test
+Synth** for every pitched layer (`--flux-plugin default="Test Synth"`), drums on
+the built-in synth, engine block 1024.
+
+| Renderer | Wall clock | Speed | Render / master / analysis (s) | LUFS | True peak | Join clicks | Peak RSS main |
+|---|---|---|---|---|---|---|---|
+| builtin (8 workers), 2 runs | 23.3 / 23.8 s | 26.3× / 25.7× | 7.1–7.3 / 14.8–14.9 / 1.1 | −14.01 | −1.30 dBTP | 0 of 13 | 0.54 GB |
+| flux-host (1 engine), 2 runs | 45.2 / 44.8 s | 13.6× / 13.7× | 28.0 / 15.5–15.7 / 1.1 | −14.01 | −1.30 dBTP | 0 of 13 (6 instrument clicks near joins) | 1.9 GB |
+| flux-host, rerun on a finished directory | 16.4 s | | 0 (14 cached) / 14.9 / 1.1 | | | | |
+
+- flux-host takes about 1.9× the wall clock of the builtin renderer for 10
+  minutes. Its render stage (28 s) splits into about 4.0 s of project building
+  over JSON-RPC (8,659 notes), 17.6 s of engine rendering (about 35× real time
+  for the mix plus four stems per section) and about 6 s in Python (built-in
+  drums, stem mixing, FLAC writes). Sections render one after another; the
+  builtin renderer spreads them over 8 processes.
+- **Test Synth is a test instrument, not release sound.** It is a bare 8-voice
+  sine with no envelope, so every note-off is a hard step, and it applies note
+  events at the start of each processing block (up to 21 ms early at block
+  1024). The flux-host master has 1,047 such sample discontinuities (the
+  builtin master: 0). Six of them fall within 50 ms of a join and are reported
+  as `section_clicks_near_joins`, because the same click is in the section
+  render; the stitching itself added none. Surge XT (flux-installer issue #5)
+  is the intended instrument. Its speed and sound still have to be measured;
+  expect it to be much slower than a sine.
+- Peak RSS of the main process rises to 1.9 GB because the drum synth and the
+  stems of the longest section are held there (the builtin renderer does that
+  in worker processes).
+- The integration test (`test_longform_fluxhost.py`, skipped without
+  `flux-engine` or Test Synth) renders a 2:54 two-section plan with an 8-bar
+  blend, bass swap and +3 BPM ramp in about 15 s. It checks loudness, true
+  peak, join clicks, non-silent stems, provenance, engine restart after a
+  crash, and that a rerun renders nothing.
+
 ## Limitations
 
-- **The built-in synth is a placeholder** for flux-host + Surge XT rendering
-  (P1/P2). It is serviceable for testing the pipeline and checking structure,
-  not a release-quality sound. `FluxHostRenderer` is a stub that raises until
-  `flux-host render` exists.
+- **The built-in synth is a placeholder** for flux-host + Surge XT rendering.
+  It is serviceable for testing the pipeline and checking structure, not a
+  release-quality sound. The flux-host renderer works, but the only instrument
+  measured so far is Test Synth; Surge XT is not installed here, and without
+  `load_preset` every plugin plays its default patch.
+- flux-host renders sections sequentially through one engine; several engines
+  in parallel would bring the render stage closer to the builtin renderer's.
 - Genre tables are starting values for owner curation, not sourced facts; the
   maqam cents are a 24-EDO-style approximation.
 - The similarity check flags near-exact repeats of 8-bar windows; it does not
