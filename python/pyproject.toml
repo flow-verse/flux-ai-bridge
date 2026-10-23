@@ -20,11 +20,18 @@ amt = ["anticipation @ git+https://github.com/jthickstun/anticipation@af37397922
 bench = ["librosa", "soundfile", "psutil"]
 # long-form orchestrator (flux-ai longform); pure numpy/scipy synth, no DAW needed
 longform = ["numpy", "scipy", "soundfile", "pyloudnorm", "mido", "jsonschema", "pyyaml", "mutagen"]
+# MCP server (flux-mcp). Pinned: the 2.x SDK API (MCPServer) is what flux_mcp is written against.
+mcp = ["mcp==2.3.0"]
+# Optional LLM eval runner for flux-mcp (python -m flux_mcp.evals --llm); needs ANTHROPIC_API_KEY.
+mcp-evals = ["mcp==2.3.0", "anthropic>=2.1,<3"]
 dev = ["pytest"]
 [project.scripts]
 flux-ai = "flux_ai.cli:main"
+flux-mcp = "flux_mcp.__main__:main"
 [tool.setuptools.package-data]
 "flux_ai.longform" = ["schema/*.json", "genres/*.yaml"]
+[tool.setuptools.packages.find]
+include = ["flux_ai*", "flux_mcp*"]
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
