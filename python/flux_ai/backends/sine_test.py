@@ -37,6 +37,9 @@ def render(seconds: float, bpm: float, key: str, seed: int, t0: float = 0.0, sr:
     in_beat = t - beat_idx * beat
     bar = beat_idx // 4
     out = np.zeros(n, dtype=np.float64)
+    ramp = 0.004  # s; short attack/release so note and chord changes don't click
+    in_bar = t - bar * 4 * beat
+    pad_env = np.clip(np.minimum(in_bar, 4 * beat - in_bar) / ramp, 0.0, 1.0)
     # pad: sustained triad, one chord per bar
     for c in range(4):
         sel = (bar % 4) == c
@@ -44,16 +47,18 @@ def render(seconds: float, bpm: float, key: str, seed: int, t0: float = 0.0, sr:
             continue
         for k, p in enumerate(chords[c]):
             f = _midi_hz(60 + p)
-            out[sel] += 0.08 * np.sin(2 * np.pi * f * t[sel] + phases[k])
+            out[sel] += 0.08 * pad_env[sel] * np.sin(2 * np.pi * f * t[sel] + phases[k])
         # arpeggio (eighth notes), seed-dependent order
         eighth = np.floor(in_beat[sel] / (beat / 2)).astype(int)
         notes = np.asarray(chords[c])[voicing[(beat_idx[sel] * 2 + eighth) % 3]]
-        env = np.exp(-6.0 * (in_beat[sel] % (beat / 2)))
+        in_eighth = in_beat[sel] % (beat / 2)
+        env = np.exp(-6.0 * in_eighth) * np.clip(np.minimum(in_eighth, beat / 2 - in_eighth) / ramp, 0.0, 1.0)
         out[sel] += 0.10 * env * np.sin(2 * np.pi * _midi_hz(72) * 2 ** (notes / 12) * t[sel])
         # bass on beats 1 and 3
         bass_on = (beat_idx[sel] % 2) == 0
         fb = _midi_hz(36 + chords[c][0])
-        benv = np.exp(-3.0 * in_beat[sel]) * bass_on
+        benv = np.exp(-3.0 * in_beat[sel]) * bass_on * np.clip(
+            np.minimum(in_beat[sel], beat - in_beat[sel]) / ramp, 0.0, 1.0)
         out[sel] += 0.25 * benv * np.sin(2 * np.pi * fb * t[sel])
     # kick on every beat: pitch-swept sine burst
     kenv = np.exp(-in_beat / 0.06)
