@@ -41,6 +41,32 @@ flux-ai transcribe clip.wav --out midi/    # notes + pitch bends
 flux-ai --json separate clip.wav --out stems/   # JSON-lines events for the plugin
 ```
 
+## Music generation backends
+`flux-ai generate` runs local, open-weight generators behind one interface (`python/flux_ai/backends/`). Weights are downloaded on demand into `~/.cache/flux-ai/models/` after a once-per-model licence acceptance; none are bundled or committed. Every output gets a `<out>.provenance.json` sidecar (`ai_generated: true`, backend, model and version, weights licence, prompt, all conditioning, seed, timestamps).
+
+| Backend | Role | Weights licence | Default? |
+|---|---|---|---|
+| `ace-step` (ACE-Step 1.5; tiers turbo, xl-turbo, base, sft, xl-base, xl-sft) | songs 10 s-10 min, BPM/key conditioning, repaint, continue | MIT | yes |
+| `magenta-rt` (Magenta RealTime 2 via MLX; tiers base, small) | streaming instrumental, text + MIDI-note control | CC-BY-4.0 (code Apache-2.0) | yes |
+| `stable-audio-3` (Small-Music, Medium) | instrumental beds, inpainting | Stability Community License, USD 1M revenue cap | opt-in |
+| `amt` (Anticipatory Music Transformer) | symbolic MIDI generate/continue/infill/accompany | Apache-2.0 | opt-in tool |
+| `sine-test` | deterministic tones for tests/CI | none | - |
+
+```bash
+uv venv .venv-gen --python 3.12
+uv pip install -p .venv-gen -e "python[ace-step,magenta-rt,bench,dev]"     # add amt if wanted
+.venv-gen/bin/flux-ai backends                       # availability, licences, tiers
+.venv-gen/bin/flux-ai generate --backend ace-step --prompt "deep house, warm pads" \
+    --seconds 120 --bpm 122 --key "A minor" --seed 1 --out song.wav --accept-licence ace-step-1.5
+.venv-gen/bin/flux-ai generate --backend magenta-rt --model small --prompt "deep house" \
+    --seconds 60 --bpm 122 --key "A minor" --out jam.wav --accept-licence magenta-rt-2
+.venv-gen/bin/flux-ai bench --backend ace-step --model turbo --backend magenta-rt --model base --model small --seeds 5
+```
+Stable Audio 3 pins `torch==2.7.1` and `transformers>=5.8`, which conflict with ACE-Step, so it needs its own venv and Hugging Face gate access. Protocol, serve mode, licence and provenance details: [docs/protocol.md](docs/protocol.md). Mac Studio numbers: [docs/benchmarks/mac-studio-m1-ultra.md](docs/benchmarks/mac-studio-m1-ultra.md).
+
+## JSON protocol v2 and the warm worker
+With `--json`, every command prints JSON lines only: `started`, `progress`, `done`, `error`, each with `protocol_version: 2` and a `job_id`. The v1 fields are unchanged, so `worker.rs` still parses them. `flux-ai serve` reads one JSON job request per line on stdin and keeps models loaded between jobs. See [docs/protocol.md](docs/protocol.md).
+
 ## Verified so far
 - `separate`: Demucs `htdemucs`, 4 stems (macOS arm64, Python 3.13).
 - `transcribe`: three-note sine melody gave A4, C#5, E5 at the right times (Python 3.12, ONNX backend).

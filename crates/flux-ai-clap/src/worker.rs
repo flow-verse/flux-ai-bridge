@@ -112,6 +112,21 @@ mod tests {
     }
 
     #[test]
+    fn parses_protocol_v2_lines() {
+        // v2 adds protocol_version/job_id and extra fields; v1 fields still deserialise.
+        assert_eq!(
+            parse_line(r#"{"event":"started","protocol_version":2,"job_id":"j1","job":"generate","input":"house","backend":"sine-test"}"#),
+            Some(Event::Started { job: "generate".into(), input: "house".into() })
+        );
+        assert_eq!(
+            parse_line(r#"{"event":"done","protocol_version":2,"job_id":"j1","job":"generate","outputs":["g.wav","g.wav.provenance.json"],"seconds":2.0}"#),
+            Some(Event::Done { job: "generate".into(), outputs: vec!["g.wav".into(), "g.wav.provenance.json".into()] })
+        );
+        // the new progress event is skipped like any unknown line
+        assert_eq!(parse_line(r#"{"event":"progress","protocol_version":2,"job_id":"j1","job":"generate","fraction":0.4,"message":"x"}"#), None);
+    }
+
+    #[test]
     fn collects_outputs_and_reports_progress() {
         let d = tempfile::tempdir().unwrap();
         let w = fake_worker(
