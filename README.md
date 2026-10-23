@@ -70,6 +70,7 @@ With `--json`, every command prints JSON lines only: `started`, `progress`, `don
 ## Verified so far
 - `separate`: Demucs `htdemucs`, 4 stems (macOS arm64, Python 3.13).
 - `transcribe`: three-note sine melody gave A4, C#5, E5 at the right times (Python 3.12, ONNX backend).
+- `generate` on a Mac Studio M1 Ultra (Python 3.12, `.venv-gen`): ACE-Step 1.5 turbo 34.7 s compute per audio minute and xl-turbo 42.6 s, both 5/5 seeds within ±1 BPM of 122; Magenta RT 2 base 83 s and small 51 s per audio minute, tempo not held. AMT generate/continue/infill ran. Stable Audio 3 installs but its weights are gated on Hugging Face (403 for this account). Details: [docs/benchmarks/mac-studio-m1-ultra.md](docs/benchmarks/mac-studio-m1-ultra.md).
 - Rust `worker` module runs `flux-ai --json` end to end (`cargo test -- --ignored` with `FLUX_AI_BIN` and `FLUX_AI_WAV`).
 
 ## CLAP plugin ("Flux AI Bridge")
