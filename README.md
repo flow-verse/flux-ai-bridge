@@ -67,6 +67,13 @@ Stable Audio 3 pins `torch==2.7.1` and `transformers>=5.8`, which conflict with 
 ## JSON protocol v2 and the warm worker
 With `--json`, every command prints JSON lines only: `started`, `progress`, `done`, `error`, each with `protocol_version: 2` and a `job_id`. The v1 fields are unchanged, so `worker.rs` still parses them. `flux-ai serve` reads one JSON job request per line on stdin and keeps models loaded between jobs. See [docs/protocol.md](docs/protocol.md).
 
+## MCP server (`flux-mcp`)
+`flux-mcp` (extra `[mcp]`) is a stdio-only Model Context Protocol server for agents such as Claude Code. It supervises one `flux-engine serve` and one `flux-ai serve`, and exposes 24 curated tools (project, tracks, plugins and parameters, MIDI clips in bars and beats, tempo, markers, render, undo, generation, stems, transcription, long-form), each edit one undo step that returns the fresh project state. A 22-task eval suite runs scripted in pytest (22/22) and optionally with a model. See [docs/mcp.md](docs/mcp.md).
+
+```bash
+claude mcp add flux -- /path/to/.venv-mcp/bin/flux-mcp --engine /path/to/flux-engine
+```
+
 ## Verified so far
 - `separate`: Demucs `htdemucs`, 4 stems (macOS arm64, Python 3.13).
 - `transcribe`: three-note sine melody gave A4, C#5, E5 at the right times (Python 3.12, ONNX backend).
