@@ -108,6 +108,23 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
     cents = theory.scale_cents(key, g.get("maqamat"))
     swing = float(g.get("swing", 0.5))
     layers = set(s.get("layers", []))
+    bars_ = s["bars"]
+    order = [x for x in ("kick", "hat_closed", "bass", "perc", "hat_open", "clap", "ride", "chords", "pad", "lead") if x in layers]
+    if len(order) > 2:  # entry/exit order differs per section so transitions do not all sound alike
+        rest = order[1:]
+        random.Random(s["seeds"]["section"] * 3 + 1).shuffle(rest)
+        order = order[:1] + rest
+    n_ph = (bars_ + 7) // 8
+
+    def active(layer: str, b: int) -> bool:
+        """DJ-style intros/outros: layers enter (intro) or leave (outro) across 8-bar phrases."""
+        if layer not in layers:
+            return False
+        if n_ph < 2 or s["type"] not in ("intro", "outro") or len(order) < 2:
+            return True
+        k = round((b // 8) * (len(order) - 1) / (n_ph - 1))
+        i = order.index(layer)
+        return i <= k if s["type"] == "intro" else i < len(order) - k
     seeds = s["seeds"]
     bars = s["bars"]
     bp = s["bar_plan"]
@@ -124,7 +141,7 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
         # consecutive phrases (and phrases two apart) always get different mutations
         mut = (b // 8 + seeds["section"]) % 6
         for inst in DRUM_LAYERS:
-            if inst not in layers:
+            if not active(inst, b):
                 continue
             line = pat.get(inst, "") or ""
             if bp[b]["fill"] and fill.get(inst):
@@ -168,6 +185,8 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
             base += 12
         offsets = {"R": 0, "3": 2, "5": 4, "7": 6, "8": 7, "b": -1}
         for b in range(bars):
+            if not active("bass", b):
+                continue
             rng = random.Random(seeds.get("bass", 0) * 31 + bp[b]["variation"] + b)
             root = bp[b]["chord"]
             bmut = (b // 8 + seeds["section"] // 6) % 5
@@ -208,6 +227,8 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
         main_r = s["patterns"]["chord_rhythm"]
         alt_r = rnames[(rnames.index(main_r) + 1) % len(rnames)] if main_r in rnames else main_r
         for b in range(bars):
+            if not active("chords", b):
+                continue
             rng = random.Random(seeds.get("chords", 0) * 17 + bp[b]["variation"] + b)
             e = bp[b]["energy"]
             ph = b // 8
