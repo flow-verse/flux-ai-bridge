@@ -170,7 +170,7 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
         for b in range(bars):
             rng = random.Random(seeds.get("bass", 0) * 31 + bp[b]["variation"] + b)
             root = bp[b]["chord"]
-            bmut = (b // 8 + seeds["section"] // 6) % 4
+            bmut = (b // 8 + seeds["section"] // 6) % 5
             line = bline
             if bmut == 1 and bline[0] != "R":  # shift an offbeat line by an eighth
                 line = bline[-2:] + bline[:-2]
@@ -178,6 +178,8 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
                 line = bline[:12] + "".join("8" if c == "R" else c for c in bline[12:])
             elif bmut == 3 and bline[14] == ".":  # pickup fifth into the next bar
                 line = bline[:14] + "5" + bline[15]
+            elif bmut == 4:  # leave the last beat of every other bar empty
+                line = bline if b % 2 == 0 else bline[:12] + "...."
             k = 0
             while k < 16:
                 ch = line[k]
@@ -210,11 +212,11 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
             e = bp[b]["energy"]
             ph = b // 8
             # every third phrase answers with the neighbouring rhythm; voicing register cycles
-            # with period 4, so with the drum (6) and bass (4) mutations a phrase pattern only
-            # recurs after 12 phrases
+            # with period 5, so with the drum (6) and bass (5) mutations a phrase pattern only
+            # recurs after 30 phrases (240 bars), longer than any section
             rline = g["chords"]["rhythms"][alt_r if (ph + seeds["section"]) % 3 == 2 else main_r]
             tt = tones + ([ext] if ext is not None and e > 0.6 and bp[b]["variation"] % 3 != 0 else [])
-            lo = c_base - 5 + (0, 3, -2, 5)[ph % 4]
+            lo = c_base - 5 + (0, 3, -2, 5, 1)[ph % 5]
             pitches = sorted({_fold(theory.degree_pitch(c_base, cents, bp[b]["chord"] + t), lo, lo + 14) for t in tt})
             k = 0
             while k < 16:
