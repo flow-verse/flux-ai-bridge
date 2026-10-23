@@ -250,7 +250,7 @@ output directory (measured on 2026-10-23 at commit `9c2649e`).
 - Compared with the worked example in the report (target ≥ 10× real time for
   the symbolic core, about 1 h total for 4 h symbolic-only): the built-in
   synth path takes about 8 minutes for 4 h. The flux-host path with Test Synth
-  is measured below; flux-host + Surge XT is not measured yet.
+  and with Surge XT are measured below.
 - **Resume after SIGKILL** (techno 1 h, 71 sections): the run was killed with
   31 sections cached and 8 half-written `.tmp` section directories. Rerunning
   the same command removed the partial directories, rendered only the
@@ -294,8 +294,7 @@ the built-in synth, engine block 1024.
   builtin master: 0). Six of them fall within 50 ms of a join and are reported
   as `section_clicks_near_joins`, because the same click is in the section
   render; the stitching itself added none. Surge XT (flux-installer issue #5)
-  is the intended instrument. Its speed and sound still have to be measured;
-  expect it to be much slower than a sine.
+  is the intended instrument; see the next section.
 - Peak RSS of the main process rises to 1.9 GB because the drum synth and the
   stems of the longest section are held there (the builtin renderer does that
   in worker processes).
@@ -305,13 +304,36 @@ the built-in synth, engine block 1024.
   peak, join clicks, non-silent stems, provenance, engine restart after a
   crash, and that a rerun renders nothing.
 
+### flux-host renderer with Surge XT, 10 minutes of deep house
+
+Surge XT 1.3.4 CLAP (official notarised release) on the M1 Ultra, seed 1,
+`--renderer flux-host --flux-plugin "default=CLAP-Surge XT-a8f7ec6e-22a0f1f2"`
+(bass, lead, pad and chords on Surge XT; drums on the built-in synth):
+
+| Audio | Wall clock | Speed | Render stage | Master stage | LUFS / true peak | Join clicks | Section clicks near joins |
+|---|---|---|---|---|---|---|---|
+| 10:12 (14 sections) | 69.7 s | 8.8× | 52.1 s | 16.1 s | −14.01 / −1.30 dBTP | 0 | 0 |
+
+- Unlike Test Synth, Surge XT has envelopes, so there are no section clicks.
+- Rendering section 6 again with `flux-engine render --stems`: bass −28.1,
+  lead −26.9, pad −18.7, chords −22.1 dBFS RMS, so every Surge track sounds.
+  The section measures 122.48 BPM (plan 122.5) and A minor (plan A minor) with
+  `flux_ai.analysis.analyse`.
+- Every Surge track plays the default "Init Saw" patch, because flux-engine has
+  no `load_preset` yet (flux-host issue #11). The layers differ only in
+  register and note pattern, not timbre. Nobody has listened to the result
+  yet; the numbers above are measurements only.
+- Installing Surge XT without admin rights: expand the official `.pkg`
+  (`pkgutil --expand-full`), copy `Surge XT.clap` to
+  `~/Library/Audio/Plug-Ins/CLAP/` and the resources payload to
+  `~/Library/Application Support/Surge XT/`.
+
 ## Limitations
 
 - **The built-in synth is a placeholder** for flux-host + Surge XT rendering.
   It is serviceable for testing the pipeline and checking structure, not a
-  release-quality sound. The flux-host renderer works, but the only instrument
-  measured so far is Test Synth; Surge XT is not installed here, and without
-  `load_preset` every plugin plays its default patch.
+  release-quality sound. The flux-host renderer works with Surge XT (measured
+  above), but without `load_preset` every plugin plays its default patch.
 - flux-host renders sections sequentially through one engine; several engines
   in parallel would bring the render stage closer to the builtin renderer's.
 - Genre tables are starting values for owner curation, not sourced facts; the
