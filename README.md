@@ -66,6 +66,11 @@ Stable Audio 3 pins `torch==2.7.1` and `transformers>=5.8`, which conflict with 
 
 ## JSON protocol v2 and the warm worker
 With `--json`, every command prints JSON lines only: `started`, `progress`, `done`, `error`, each with `protocol_version: 2` and a `job_id`. The v1 fields are unchanged, so `worker.rs` still parses them. `flux-ai serve` reads one JSON job request per line on stdin and keeps models loaded between jobs. See [docs/protocol.md](docs/protocol.md).
+## Long-form sets (`flux-ai longform`)
+Plans and renders hours of one genre (deep house, techno, lo-fi hip hop, ambient, maqam groove) into one mastered file (−14 LUFS, ≤ −1 dBTP) with chapters, a cue sheet and `provenance.json`. Runs without flux-host for now (built-in placeholder synth). See [docs/longform.md](docs/longform.md).
+```bash
+flux-ai longform --genre "deep house" --hours 1 --out runs/dh-1h
+```
 
 ## Verified so far
 - `separate`: Demucs `htdemucs`, 4 stems (macOS arm64, Python 3.13).

@@ -19,3 +19,6 @@ node_modules/
 checkpoints/
 bench-out/
 .cache/
+# long-form run output
+longform-out/
+longform-runs/

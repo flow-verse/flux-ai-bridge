@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# STARTING VALUES FOR OWNER CURATION. Common-practice guesses, NOT sourced facts.
+# See deep_house.yaml for the grid-string legend.
+name: lo-fi hip hop
+aliases: [lofi, lo-fi, lofi hip hop, lo-fi hiphop, chillhop]
+tuning: 12tet
+bpm: {min: 72, max: 88}
+bpm_step_max: 3.0
+swing: 0.6
+key_system: camelot
+keys:
+  start: ["F major", "Eb major", "D minor", "A minor", "C major", "Bb major"]
+  moves: {"same": 2, "+1": 3, "-1": 3, "relative": 3, "+2 energy boost": 0}
+  minor_mode: dorian
+  major_mode: major
+segment:
+  target_minutes: 2.5
+  forms:
+    beat_tape: [[intro, 4], [groove, 16], [peak, 16], [breakdown, 4], [groove, 16], [outro, 4]]
+    short:     [[intro, 4], [groove, 24], [breakdown, 8], [peak, 16], [outro, 4]]
+    loop_flip: [[intro, 8], [groove, 16], [build, 4], [peak, 24], [outro, 8]]
+  transition: {type: fade, bars: 4, eq: true, bass_swap: false}
+section_types:
+  intro:     {energy: -0.25, mute: [kick, clap, bass, lead]}
+  groove:    {energy: 0.0, mute: []}
+  build:     {energy: 0.05, mute: []}
+  peak:      {energy: 0.1, mute: []}
+  breakdown: {energy: -0.3, mute: [kick, hat_closed], add: [pad, lead]}
+  outro:     {energy: -0.25, mute: [kick, clap, lead]}
+energy_curves:
+  study_session: [[0.0, 0.40], [0.20, 0.60], [0.50, 0.55], [0.80, 0.65], [1.0, 0.40]]
+  flat:          [[0.0, 0.50], [1.0, 0.55]]
+layers: {kick: 0.0, clap: 0.0, hat_closed: 0.0, hat_open: 0.5, perc: 0.45, ride: 0.9, bass: 0.0, chords: 0.0, pad: 0.8, lead: 0.4}
+drums:
+  patterns:
+    boombap_a: {kick: "x.......x.x.....", clap: "....x.......x...", hat_closed: "x.x.x.x.x.x.x.x.", hat_open: "..............o.", perc: "......o.........", ride: ""}
+    boombap_b: {kick: "x......x..x.....", clap: "....x.......x..o", hat_closed: "x.xox.x.x.xox.x.", hat_open: "", perc: "...o.......o....", ride: ""}
+    lazy_c:    {kick: "x.........x.x...", clap: "....x.......x...", hat_closed: "x...x.x.x...x.x.", hat_open: "......o.........", perc: "o.......o.......", ride: ""}
+    dusty_d:   {kick: "x..x......x.....", clap: "....x.......x...", hat_closed: "xoxoxoxoxoxoxoxo", hat_open: "", perc: "..........o.....", ride: ""}
+  fill: {clap: "....x.......x.xx", hat_closed: "x.x.x.x.x.xxx.xx"}
+bass:
+  octave: 1
+  patterns:
+    root_a:  "R-----..R-...5.."
+    walk_b:  "R---..5-R---.3.."
+    sparse:  "R-------........"
+    bounce:  "R--.R...5--.8..."
+chords:
+  octave: 4
+  tones: [0, 2, 4, 6]
+  extension: 8
+  progressions:
+    ii_v_i:   [1, 4, 0, 0]
+    two_five: [1, 4, 1, 4]
+    four_one: [3, 2, 1, 0]
+    six_ii:   [5, 1, 4, 0]
+    one_four: [0, 3, 0, 3]
+  rhythms:
+    held:  "x-------x-------"
+    lazy:  "x-----.x-------."
+    whole: "x---------------"
+lead:
+  octave: 5
+  motif_bars: [2]
+  notes_per_bar: [2, 4]
+  range_degrees: [0, 9]
+motif_pool: 8
+transforms: [identity, up2, down3, invert, retrograde, shift]
+no_repeat: {form: 1, drums: 2, bass: 2, progression: 3, chord_rhythm: 1, motif: 4}
+timbre:
+  kick:       {freq: 55, pitch_amount: 2.0, pitch_decay: 0.03, decay: 0.3, click: 0.15, level_db: -6}
+  clap:       {kind: snare, decay: 0.2, tone: 1800, level_db: -12}
+  hat_closed: {decay: 0.03, tone: 7000, level_db: -24}
+  hat_open:   {decay: 0.15, tone: 6500, level_db: -26}
+  perc:       {kind: rim, freq: 1100, decay: 0.04, level_db: -22}
+  ride:       {decay: 0.5, tone: 5000, level_db: -30}
+  bass:  {wave: sine, sub: 0.0, cutoff: 600, env_amount: 0.5, env_decay: 0.1, attack: 0.008, decay: 0.3, sustain: 0.8, release: 0.08, level_db: -10}
+  chords: {wave: fm, voices: 1, detune_cents: 0, cutoff: 2500, env_amount: 0.5, env_decay: 0.3, attack: 0.003, decay: 1.2, sustain: 0.35, release: 0.4, level_db: -17, reverb: 0.3, delay: 0.0, fm_ratio: 1.0, fm_index: 1.2}
+  pad:   {wave: saw, voices: 2, detune_cents: 10, cutoff: 700, env_amount: 0.2, env_decay: 1.0, attack: 0.6, decay: 1.0, sustain: 0.8, release: 1.0, level_db: -27, reverb: 0.5}
+  lead:  {wave: fm, voices: 1, cutoff: 3000, env_amount: 0.4, env_decay: 0.3, attack: 0.002, decay: 0.6, sustain: 0.1, release: 0.3, level_db: -22, reverb: 0.35, delay: 0.25, vibrato_cents: 6, fm_ratio: 3.5, fm_index: 1.5}
+  sidechain: {depth: 0.15, release: 0.2}
+  reverb: {seconds: 1.4}
+  lowpass_master: 9000
+  texture: vinyl
+neural:
+  prompt: "lo-fi hip hop instrumental, dusty drums, mellow jazz chords, {bpm} BPM, {key}"

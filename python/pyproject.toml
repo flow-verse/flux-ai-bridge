@@ -18,9 +18,13 @@ magenta-rt = ["magenta-rt[mlx]==2.0.3; sys_platform == 'darwin'", "mlx==0.31.2; 
 stable-audio-3 = ["stable-audio-3 @ git+https://github.com/Stability-AI/stable-audio-3", "soundfile"]
 amt = ["anticipation @ git+https://github.com/jthickstun/anticipation@af37397922665a0fb8d474d7988b0f3755a38d45", "torch", "transformers", "mido"]
 bench = ["librosa", "soundfile", "psutil"]
+# long-form orchestrator (flux-ai longform); pure numpy/scipy synth, no DAW needed
+longform = ["numpy", "scipy", "soundfile", "pyloudnorm", "mido", "jsonschema", "pyyaml", "mutagen"]
 dev = ["pytest"]
 [project.scripts]
 flux-ai = "flux_ai.cli:main"
+[tool.setuptools.package-data]
+"flux_ai.longform" = ["schema/*.json", "genres/*.yaml"]
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

@@ -101,6 +101,10 @@ def build_parser() -> argparse.ArgumentParser:
     for sp in sub.choices.values():
         sp.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
         sp.add_argument("--job-id", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+
+    from flux_ai.longform.cli import register as register_longform  # light import; has its own --json
+
+    register_longform(sub)
     return p
 
 
@@ -126,6 +130,9 @@ def main(argv=None) -> int:
 
         return bench.main(argv[argv.index("bench") + 1:])
     a = build_parser().parse_args(argv)
+    if a.cmd == "longform":
+        a.longform_json = a.longform_json or a.json
+        return a.func(a)
     from flux_ai import jobs
 
     if a.cmd == "serve":

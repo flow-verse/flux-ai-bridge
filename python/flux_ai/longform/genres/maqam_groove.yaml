@@ -1,0 +1,97 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# STARTING VALUES FOR OWNER CURATION. These are NOT sourced facts. Intervals in
+# maqam practice vary by region and performer (the "half-flat" of bayati is
+# commonly played lower than 150 cents in Egypt and differently in the Levant
+# and Iraq); the cents below are a 24-EDO-style starting point that the owner
+# should tune by ear or replace with a curated Scala/MTS-ESP table.
+#
+# Arabic maqam-based groove: darbuka-style percussion on the maqsum rhythm,
+# drone + oud-like plucked lead, quarter tones rendered as per-note pitch bends.
+# Instrument keys reuse the generic drum names: kick = doum, clap = tek,
+# hat_closed = riq jingles, perc = ka (soft tek).
+name: maqam groove
+aliases: [maqam, arabic, maqam bayati, bayati, hijaz, arabic maqam, maqam-groove]
+tuning: maqam
+bpm: {min: 92, max: 108}
+bpm_step_max: 3.0
+swing: 0.5
+key_system: maqam
+maqamat:   # seven-degree scales in cents above the tonic (qarar)
+  bayati:   {cents: [0, 150, 300, 500, 700, 800, 1000]}
+  hijaz:    {cents: [0, 100, 400, 500, 700, 800, 1000]}
+  rast:     {cents: [0, 200, 350, 500, 700, 900, 1050]}
+  saba:     {cents: [0, 150, 300, 400, 700, 800, 1000]}
+  nahawand: {cents: [0, 200, 300, 500, 700, 800, 1100]}
+modulations:   # allowed maqam moves: target maqam and tonic shift in semitones
+  bayati:   [{to: bayati, shift: 0, weight: 3}, {to: hijaz, shift: 0, weight: 2}, {to: saba, shift: 0, weight: 1}, {to: rast, shift: -2, weight: 2}, {to: nahawand, shift: 5, weight: 1}]
+  hijaz:    [{to: hijaz, shift: 0, weight: 2}, {to: bayati, shift: 0, weight: 3}, {to: nahawand, shift: 5, weight: 1}]
+  rast:     [{to: rast, shift: 0, weight: 3}, {to: bayati, shift: 2, weight: 2}, {to: nahawand, shift: 0, weight: 1}]
+  saba:     [{to: saba, shift: 0, weight: 1}, {to: bayati, shift: 0, weight: 3}, {to: hijaz, shift: 3, weight: 1}]
+  nahawand: [{to: nahawand, shift: 0, weight: 2}, {to: hijaz, shift: 7, weight: 1}, {to: bayati, shift: -5, weight: 1}, {to: rast, shift: 0, weight: 1}]
+keys:
+  start: ["D bayati", "C rast", "D hijaz"]
+segment:
+  target_minutes: 5.0
+  forms:
+    taqsim_groove: [[intro, 8], [groove, 32], [build, 8], [peak, 32], [breakdown, 16], [peak, 24], [outro, 8]]
+    dance:         [[intro, 8], [groove, 24], [peak, 32], [breakdown, 8], [peak, 24], [outro, 8]]
+  transition: {type: blend, bars: 8, eq: true, bass_swap: true}
+section_types:
+  intro:     {energy: -0.25, mute: [kick, clap, bass, hat_closed]}
+  groove:    {energy: 0.0, mute: []}
+  build:     {energy: 0.05, mute: []}
+  peak:      {energy: 0.15, mute: []}
+  breakdown: {energy: -0.30, mute: [kick, bass], add: [pad]}
+  outro:     {energy: -0.25, mute: [lead, hat_closed]}
+energy_curves:
+  hafla: [[0.0, 0.35], [0.30, 0.70], [0.50, 0.60], [0.80, 0.90], [1.0, 0.40]]
+layers: {kick: 0.0, clap: 0.0, hat_closed: 0.3, hat_open: 0.6, perc: 0.4, ride: 1.1, bass: 0.15, chords: 0.0, pad: 0.7, lead: 0.0}
+drums:
+  patterns:
+    maqsum:   {kick: "x.......x.......", clap: "..x...x.....x...", hat_closed: "x.x.x.x.x.x.x.x.", hat_open: "............x...", perc: "....o.......o.o.", ride: ""}
+    baladi:   {kick: "x..x....x.......", clap: "......x.....x...", hat_closed: "x.x.x.x.x.x.x.x.", hat_open: "......x.........", perc: "..o.o.....o.o.o.", ride: ""}
+    saidi:    {kick: "x.....x.x.......", clap: "..x.........x...", hat_closed: "xoxoxoxoxoxoxoxo", hat_open: "", perc: "....o.o.....o.o.", ride: ""}
+    malfuf:   {kick: "x.....x.........", clap: "....x.......x...", hat_closed: "x.x.x.x.x.x.x.x.", hat_open: "", perc: "..o.....o.o...o.", ride: ""}
+  fill: {clap: "x.x.x.x.xxxxxxxx", hat_closed: "xxxxxxxxxxxxxxxx"}
+bass:
+  octave: 1
+  patterns:
+    doum:    "R.......5......."
+    walk:    "R...R...5...R.8."
+    pulse:   "R.R...R.R.5...R."
+chords:      # drone: tonic + fifth (scale steps 0 and 4)
+  octave: 3
+  tones: [0, 4]
+  extension: 7
+  progressions:
+    drone_a: [0, 0, 0, 0]
+    drone_b: [0, 0, 3, 0]
+    drone_c: [0, 3, 0, 4]
+  rhythms:
+    held: "x---------------"
+lead:
+  octave: 4
+  motif_bars: [1, 2]
+  notes_per_bar: [4, 8]
+  range_degrees: [-1, 9]
+  stepwise: true
+motif_pool: 10
+transforms: [identity, up2, down3, invert, retrograde, shift]
+no_repeat: {form: 1, drums: 2, bass: 2, progression: 2, chord_rhythm: 0, motif: 5}
+timbre:
+  kick:       {kind: doum, freq: 85, pitch_amount: 0.6, pitch_decay: 0.03, decay: 0.35, click: 0.1, level_db: -6}
+  clap:       {kind: tek, decay: 0.05, tone: 2500, level_db: -12}
+  hat_closed: {kind: riq, decay: 0.07, tone: 7000, level_db: -24}
+  hat_open:   {kind: riq, decay: 0.25, tone: 6500, level_db: -25}
+  perc:       {kind: rim, freq: 1800, decay: 0.035, level_db: -21}
+  ride:       {decay: 0.5, tone: 6000, level_db: -40}
+  bass:  {wave: sine, sub: 0.0, cutoff: 500, env_amount: 1.0, env_decay: 0.08, attack: 0.004, decay: 0.3, sustain: 0.5, release: 0.08, level_db: -12}
+  chords: {wave: saw, voices: 2, detune_cents: 5, cutoff: 600, env_amount: 0.2, env_decay: 1.0, attack: 1.0, decay: 1.0, sustain: 0.9, release: 1.5, level_db: -26, reverb: 0.4}
+  pad:   {wave: saw, voices: 3, detune_cents: 8, cutoff: 900, env_amount: 0.2, env_decay: 1.0, attack: 1.0, decay: 1.0, sustain: 0.8, release: 1.5, level_db: -28, reverb: 0.5}
+  lead:  {wave: pluck, voices: 1, cutoff: 2600, env_amount: 2.5, env_decay: 0.09, attack: 0.002, decay: 0.5, sustain: 0.0, release: 0.15, level_db: -17, reverb: 0.3, delay: 0.15, vibrato_cents: 12}
+  sidechain: {depth: 0.0, release: 0.2}
+  reverb: {seconds: 1.6}
+  texture: none
+neural:
+  prompt: "arabic percussion groove, darbuka, riq, {bpm} BPM"
+  note: "Neural audio is weak at quarter tones; restrict neural layers to percussion/texture for this style."
