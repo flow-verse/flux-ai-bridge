@@ -76,5 +76,9 @@ def summarize(project: dict | None, history: dict | None = None) -> dict:
         "tracks": tracks,
     }
     if history is not None:
-        out["history"] = {k: history.get(k) for k in ("can_undo", "can_redo", "undo_text", "redo_text")}
+        out["history"] = {k: history.get(k) for k in ("can_undo", "can_redo", "undo_text", "redo_text", "unsaved")}
+        turns = history.get("agent_turns")
+        if turns:  # the last few agent turns, so the model sees what it (or a previous agent) did
+            out["history"]["recent_turns"] = [
+                {"label": t.get("label"), "undone": not t.get("done", True)} for t in turns[-5:]]
     return out
