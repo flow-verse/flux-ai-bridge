@@ -22,3 +22,8 @@ bench-out/
 # long-form run output
 longform-out/
 longform-runs/
+
+# local secrets (API keys)
+.env
+.env.*
+!.env.example
