@@ -110,3 +110,7 @@ flux_host:
   # the timbre table's balance relative to the bass.
   gain_db:
     "Surge XT": {bass: 0.0, chords: -15.2, pad: -14.1, lead: -8.2}
+  # Pitch-bend range in semitones (measured: bend 0.25 = +0.50 st on Pianobass, Organ 1 and East).
+  # Quarter tones are carried as a fixed bend on one extra instrument track per cent offset.
+  bend_range:
+    "Surge XT": 2

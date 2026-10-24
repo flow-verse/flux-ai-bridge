@@ -17,7 +17,8 @@ import pyloudnorm  # noqa: E402
 import soundfile as sf  # noqa: E402
 
 from flux_ai.longform import analysis, master, outputs, pipeline, planner, symbolic, timing  # noqa: E402
-from flux_ai.longform.fluxhost import FluxHostRenderer, notes_to_clips, parse_plugin_specs, parse_preset_specs  # noqa: E402
+from flux_ai.longform.fluxhost import (  # noqa: E402
+    FluxHostRenderer, base_layer, notes_to_clips, parse_plugin_specs, parse_preset_specs, split_microtones)
 from flux_ai.longform.render import ParsedNote, get_renderer, parse_midi  # noqa: E402
 
 HERE = Path(__file__).resolve()
@@ -81,9 +82,26 @@ def test_drum_split_microtones_and_clip_end():
     lead = clips["lead"][0]
     assert lead["pitch"] in (62, 63) and lead["velocity"] == 1
     assert lead["start_beat"] == 2.0 and lead["start_beat"] + lead["length_beats"] == 8  # cut at the clip end
-    assert st["microtones_rounded"] == 1 and st["clamped"] == 1 and clips["pad"] == []
+    assert lead["cents"] in (50, -50)  # the quarter tone is kept as an offset, not rounded away
+    assert st["microtonal_notes"] == 1 and st["clamped"] == 1 and clips["pad"] == []
     clips, _ = notes_to_clips(notes, 120.0, 8, {"lead": "lead"})  # unrouted layers are skipped
     assert list(clips) == ["lead"]
+
+
+
+def test_split_microtones_routes_each_offset_to_its_own_bent_track():
+    n = lambda p, c: {"pitch": p, "start_beat": 0, "length_beats": 1, "velocity": 100, "cents": c}
+    clips = {"lead": [n(64, -50), n(62, 0), n(64, -50), n(69, 50)], "pad": [n(60, 0)], "bass": [n(40, 250)]}
+    out, events, st = split_microtones(clips, {"lead": 2.0, "bass": 2.0})
+    assert sorted(out) == ["bass", "lead", "lead~+50c", "lead~-50c", "pad"]
+    assert [x["pitch"] for x in out["lead~-50c"]] == [64, 64] and len(out["lead"]) == 1
+    assert events["lead~-50c"] == [{"type": "pitch_bend", "beat": 0, "value": -0.25}]
+    assert events["lead~+50c"][0]["value"] == 0.25 and "lead" not in events and "pad" not in events
+    assert st == {"microtone_tracks": 2, "microtonal_notes_carried": 3, "microtones_out_of_range": 1}
+    assert all("cents" not in x for xs in out.values() for x in xs)
+    assert base_layer("lead~-50c") == "lead" and base_layer("pad") == "pad"
+    _, ev, _ = split_microtones({"lead": [n(64, -50)]}, {"lead": 1.0})  # a ±1 st instrument bends twice as far
+    assert ev["lead~-50c"][0]["value"] == -0.5
 
 
 def test_plugin_precedence(monkeypatch):

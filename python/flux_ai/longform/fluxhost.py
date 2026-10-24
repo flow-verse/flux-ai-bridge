@@ -90,7 +90,7 @@ def notes_to_clips(notes: list[render.ParsedNote], bpm: float, clip_beats: float
     beat_per_s = bpm / 60.0
     clip_ticks = int(math.floor(clip_beats * TICKS + 1e-6))
     out: dict[str, list[dict]] = {name: [] for name in set(tracks.values())}
-    stats = {"notes": 0, "microtones_rounded": 0, "clamped": 0}
+    stats = {"notes": 0, "microtonal_notes": 0, "clamped": 0}
     for nt in notes:
         layer = nt.track
         if layer == "drums" and "kick" in tracks and int(round(nt.pitch)) == KICK_NOTE:
@@ -99,8 +99,9 @@ def notes_to_clips(notes: list[render.ParsedNote], bpm: float, clip_beats: float
         if dest is None:
             continue
         pitch = int(round(nt.pitch))
-        if abs(nt.pitch - pitch) > 0.01:
-            stats["microtones_rounded"] += 1
+        cents = int(round((nt.pitch - pitch) * 100))
+        if cents:
+            stats["microtonal_notes"] += 1
         a = int(round(nt.start * beat_per_s * TICKS))
         b = int(round(nt.end * beat_per_s * TICKS))
         if a >= clip_ticks:
@@ -108,10 +109,48 @@ def notes_to_clips(notes: list[render.ParsedNote], bpm: float, clip_beats: float
             continue
         b = min(max(b, a + 1), clip_ticks)
         out[dest].append({"pitch": min(max(pitch, 0), 127), "start_beat": a / TICKS, "length_beats": (b - a) / TICKS,
-                          "velocity": min(max(int(round(nt.vel * 127)), 1), 127)})
+                          "velocity": min(max(int(round(nt.vel * 127)), 1), 127), "cents": cents})
         stats["notes"] += 1
     return out, stats
 
+
+def split_microtones(clips: dict[str, list[dict]], bend_range: dict[str, float]
+                     ) -> tuple[dict[str, list[dict]], dict[str, list[dict]], dict]:
+    """Route microtonal notes to extra engine tracks, one per cent offset.
+
+    Notes carry a `cents` offset from their rounded pitch (maqam quarter tones are
+    ±50). Instruments such as Surge XT apply a pitch bend to every voice, whatever
+    the MIDI channel, so each distinct offset gets its own track (named
+    `"<layer>~<+cents>c"`) holding one pitch bend for the whole clip. `bend_range`
+    is the instrument's range in semitones per layer (default 2). Offsets beyond
+    the range are rounded away and counted. Returns (clips, events, stats); the
+    `cents` keys are removed.
+    """
+    out: dict[str, list[dict]] = {}
+    events: dict[str, list[dict]] = {}
+    stats = {"microtone_tracks": 0, "microtonal_notes_carried": 0, "microtones_out_of_range": 0}
+    for name, notes in clips.items():
+        rng = float(bend_range.get(name, 2.0)) * 100.0
+        for nt in notes:
+            c = int(nt.pop("cents", 0) or 0)
+            if c and abs(c) > rng:
+                stats["microtones_out_of_range"] += 1
+                c = 0
+            key = name if not c else f"{name}~{c:+d}c"
+            if key not in out:
+                out[key] = []
+                if c:
+                    events[key] = [{"type": "pitch_bend", "beat": 0, "value": round(c / rng, 6)}]
+                    stats["microtone_tracks"] += 1
+            if c:
+                stats["microtonal_notes_carried"] += 1
+            out[key].append(nt)
+    return out, events, stats
+
+
+def base_layer(track_name: str) -> str:
+    """Layer of an engine track (`"lead~-50c"` -> `"lead"`)."""
+    return track_name.split("~", 1)[0]
 
 class FluxHostRenderer(render.Renderer):
     """Renders pitched layers with CLAP/VST3 instruments in flux-host's headless engine."""
@@ -223,6 +262,16 @@ class FluxHostRenderer(render.Renderer):
             out[layer] = int((per or {}).get(layer, 0)) if isinstance(per, dict) else 0
         return out
 
+    def layer_bend_range(self, genre: dict, resolved: dict[str, dict | None]) -> dict[str, float]:
+        """Pitch-bend range in semitones per layer for its instrument (genre flux_host.bend_range per
+        plugin name: a number, or {layer: semitones}); default 2, Surge XT's and most synths' default."""
+        table = (genre.get("flux_host") or {}).get("bend_range") or {}
+        out: dict[str, float] = {}
+        for layer, plugin in resolved.items():
+            per = table.get(plugin.get("name")) if plugin else None
+            out[layer] = float(per.get(layer, 2.0) if isinstance(per, dict) else (per or 2.0))
+        return out
+
     def identity(self) -> dict:
         """Everything that changes the audio: engine build, plugins, this code. Starts the engine."""
         if self._identity is None:
@@ -279,13 +328,16 @@ class FluxHostRenderer(render.Renderer):
             if k:
                 for note in ns:
                     note["pitch"] = min(127, max(0, int(note["pitch"]) + k))
-        preset_of = {name: layer_preset["drums" if name == "kick" else name] for name in clips}
+        bend_range = self.layer_bend_range(genre, resolved)
+        clips, events, micro = split_microtones(clips, {**bend_range, "kick": bend_range["drums"]})
+        plugin_of = {name: resolved["drums" if base_layer(name) == "kick" else base_layer(name)] for name in clips}
+        preset_of = {name: layer_preset["drums" if base_layer(name) == "kick" else base_layer(name)] for name in clips}
 
         last: Exception | None = None
         for attempt in range(2):
             try:
                 eng = self._render_engine(section_plan["id"], out_wav.parent, bpm, clip_bars, n, clips, plugin_of,
-                                          preset_of)
+                                          preset_of, events)
                 break
             except engine_client.EngineCrashed as e:  # restarted on the next call; redo the section from scratch
                 last = e
@@ -297,18 +349,22 @@ class FluxHostRenderer(render.Renderer):
         level = {k: synth.db(v) for k, v in self.layer_gains(genre, resolved).items()}
         low, high = base.low, base.high
         duck = base.duck[:, None]
-        for name, x in stems.items():
+        for track, x in stems.items():
+            name = base_layer(track)
             if name in ("kick", "drums"):
                 (low if name == "kick" else high)[:] += x * level.get("drums", 1.0)
             else:
                 y = x * (level.get(name, 1.0) * duck)
                 (low if name == "bass" else high)[:] += y
+        layers_used = {base_layer(t) for t in clips}
         stats = {"notes": len(notes), "tail_seconds": base.tail,
                  "plugins": {layer: (r or "builtin-synth") for layer, r in resolved.items()
-                             if layer in clips or (layer == "drums" and drums_builtin)},
-                 "presets": {layer: p for layer, p in layer_preset.items() if p and layer in clips},
-                 "transpose": {layer: k for layer, k in shift.items() if k and layer in clips},
-                 "engine": info, "conversion": {**conv, "pitch_bend": "not carried (rounded to semitones)",
+                             if layer in layers_used or (layer == "drums" and drums_builtin)},
+                 "presets": {layer: p for layer, p in layer_preset.items() if p and layer in layers_used},
+                 "transpose": {layer: k for layer, k in shift.items() if k and layer in layers_used},
+                 "engine": info, "conversion": {**conv, **micro,
+                                                "pitch_bend": "microtones carried as a fixed pitch bend on one extra "
+                                                              "instrument track per cent offset",
                                                 "cc74_brightness": "not carried"}}
         return render.write_section(out_wav, low, high, sr, body, stats)
 
@@ -335,7 +391,8 @@ class FluxHostRenderer(render.Renderer):
 
     def _render_engine(self, sid: str, workdir: Path, bpm: float, clip_bars: int, frames: int,
                        clips: dict[str, list[dict]], plugin_of: dict[str, dict],
-                       preset_of: dict[str, str | None] | None = None) -> tuple[dict[str, np.ndarray], dict]:
+                       preset_of: dict[str, str | None] | None = None,
+                       events: dict[str, list[dict]] | None = None) -> tuple[dict[str, np.ndarray], dict]:
         import soundfile as sf
 
         sr = self.sample_rate
@@ -377,8 +434,11 @@ class FluxHostRenderer(render.Renderer):
 
         def write() -> None:
             for name, notes in clips.items():
-                self._call("write_notes", {"track": track_ids[name], "start_bar": 1, "length_bars": clip_bars,
-                                           "notes": notes, "name": f"{sid} {name}"}, 300.0)
+                req = {"track": track_ids[name], "start_bar": 1, "length_bars": clip_bars,
+                       "notes": notes, "name": f"{sid} {name}"}
+                if (events or {}).get(name):
+                    req["events"] = events[name]
+                self._call("write_notes", req, 300.0)
             self._call("set_range", {"start_bar": 1, "end_bar": 1 + clip_bars})
 
         turn(f"longform {sid}: instruments", add_tracks)

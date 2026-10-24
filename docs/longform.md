@@ -343,6 +343,23 @@ two measured corrections for that plugin:
 
 Override per run with `--flux-preset LAYER=NAME` (MCP: `flux_presets`).
 
+### Maqam quarter tones through flux-host
+
+The section MIDI carries quarter tones as per-channel pitch bends (MPE style).
+Surge XT applies a pitch bend to all its voices whatever the channel, so the
+renderer routes each distinct cent offset of a layer to its own extra
+instrument track (`lead~-50c`), whose clip starts with one pitch bend
+(`write_notes` events, flux-host #10). `flux_host.bend_range` gives the
+instrument's range (Surge XT: ±2 semitones, measured). Offsets beyond the range
+are rounded and counted (`microtones_out_of_range`).
+
+3:25 of maqam bayati on D, seed 3, Surge XT: all 142 microtonal notes carried
+on 18 extra tracks, none out of range; −14.00 LUFS, −1.30 dBTP, no clicks, 51 s
+wall clock. Rendering section s000 with stems and tracking pitch (pYIN): the
+`lead~-50c` and `chords~-50c` stems sit on pitch class 3.5 (E half-flat, 150
+cents above D, bayati's second degree) for 80% and 49% of voiced frames, and
+on no semitone; the unbent stems sit on D, A and C.
+
 | Genre | bass | chords | pad | lead |
 |---|---|---|---|---|
 | deep house | Deep end (+24) | House Organ (+24) | Winter warmer | Nice pluck 1 |
@@ -377,7 +394,8 @@ for curation.
 - flux-host renders sections sequentially through one engine; several engines
   in parallel would bring the render stage closer to the builtin renderer's.
 - Genre tables are starting values for owner curation, not sourced facts; the
-  maqam cents are a 24-EDO-style approximation.
+  maqam cents are a 24-EDO-style approximation. Each extra cent offset costs one
+  more instrument instance per section.
 - The similarity check flags near-exact repeats of 8-bar windows; it does not
   measure whether hour 2 is musically interesting. Human review gates are
   still needed.
