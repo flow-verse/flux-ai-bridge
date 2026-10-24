@@ -30,7 +30,10 @@ DEFAULT_PROMPT = "deep house, warm analog pads, punchy four-on-the-floor kick, r
 
 
 def _peak_rss_bytes() -> int:
-    r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    """Largest resident set of this worker or any child it ran (backends such as
+    Stable Audio 3's MLX runtime generate in a subprocess)."""
+    r = max(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+            resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)
     return int(r if sys.platform == "darwin" else r * 1024)
 
 

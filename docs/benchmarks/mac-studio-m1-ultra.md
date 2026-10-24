@@ -62,6 +62,36 @@ but **not on key** (turbo 60%, xl-turbo 80% on 5 seeds; 20 seeds still to be
 run). **Magenta RT 2 meets neither**: it has no tempo or key input, and even
 with the MIDI note guide its tempo wanders (estimates 114-130 BPM).
 
+### Stable Audio 3 through MLX vs ACE-Step (2026-10-24)
+
+Same prompt, 120 s, 122 BPM, A minor, seeds 0-4, all four tiers in one run
+(`flux-ai bench`, `.venv-gen`, mlx 0.31.2, Stability's MLX runtime at
+`77e0398c26f7`). Peak RSS counts the MLX runtime's subprocess. Stable Audio 3
+has no tempo or key input; Flux appends "122 BPM, A minor" to the prompt.
+
+| backend / tier | warm s per 120 s | s compute / audio min | × real time | peak RSS | BPM within ±1 | key = A minor (exact / incl. C major) |
+|---|---|---|---|---|---|---|
+| Stable Audio 3 small-music | **3.4** | **1.7** | **35×** | 1.5 GB | 3/5 | 2/5 / 2/5 |
+| Stable Audio 3 medium | **8.8** | **4.4** | **14×** | 3.4 GB | **5/5** | 0/5 / 0/5 |
+| ACE-Step 1.5 turbo | 59.9 | 29.9 | 2.0× | 14 GB | 5/5 | 3/5 / 3/5 |
+| ACE-Step 1.5 xl-turbo | 76.4 | 38.2 | 1.6× | 20 GB | 5/5 | 2/5 / 2/5 |
+
+- Cold first calls: small-music 3.7 s (weights already cached), medium 397 s
+  including its 5.2 GB download.
+- Per-seed estimates: small-music BPM [92.5, 121.8, 122.0, 123.0, 122.5], keys
+  [A minor, D major, E major, A minor, F# minor]; medium BPM [122.6, 121.8,
+  122.6, 122.6, 122.9], keys [E minor, G minor, G major, G major, F# minor].
+  A rerun with the same seeds gave identical estimates (deterministic).
+- Repaint and continue: the runtime re-decodes and peak-normalises the whole
+  clip, so Flux level-matches it and pastes the original audio back outside the
+  regenerated span (50 ms crossfades): the kept audio is sample-exact.
+- Takeaway: Stable Audio 3 is 7-17x faster than ACE-Step here and Medium holds
+  tempo, but neither tier follows a key given in the prompt. For long-form
+  layers that must sit in a planned key, ACE-Step stays the default; Stable
+  Audio 3 suits key-neutral material (drums, textures, effects) and fast drafts.
+  ACE-Step turbo's 29.9 s per audio minute today vs 34.7 s on 2026-10-23 is
+  run-to-run variation.
+
 ## Per-seed results
 
 ACE-Step turbo: BPM 122.32, 122.00, 122.60, 121.99, 121.99; key A minor, E minor, F# minor, A minor, A minor.

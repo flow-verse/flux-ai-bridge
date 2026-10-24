@@ -48,7 +48,7 @@ flux-ai --json separate clip.wav --out stems/   # JSON-lines events for the plug
 |---|---|---|---|
 | `ace-step` (ACE-Step 1.5; tiers turbo, xl-turbo, base, sft, xl-base, xl-sft) | songs 10 s-10 min, BPM/key conditioning, repaint, continue | MIT | yes |
 | `magenta-rt` (Magenta RealTime 2 via MLX; tiers base, small) | streaming instrumental, text + MIDI-note control | CC-BY-4.0 (code Apache-2.0) | yes |
-| `stable-audio-3` (Small-Music, Medium) | instrumental beds, inpainting | Stability Community License, USD 1M revenue cap | opt-in |
+| `stable-audio-3` (Small-Music, Medium, Small-SFX) | licensed-data music and sound beds, repaint, continue; MLX on Apple Silicon | Stability Community License, USD 1M revenue cap | opt-in |
 | `amt` (Anticipatory Music Transformer) | symbolic MIDI generate/continue/infill/accompany | Apache-2.0 | opt-in tool |
 | `sine-test` | deterministic tones for tests/CI | none | - |
 
@@ -62,7 +62,7 @@ uv pip install -p .venv-gen -e "python[ace-step,magenta-rt,bench,dev]"     # add
     --seconds 60 --bpm 122 --key "A minor" --out jam.wav --accept-licence magenta-rt-2
 .venv-gen/bin/flux-ai bench --backend ace-step --model turbo --backend magenta-rt --model base --model small --seeds 5
 ```
-Stable Audio 3 pins `torch==2.7.1` and `transformers>=5.8`, which conflict with ACE-Step, so it needs its own venv and Hugging Face gate access. Protocol, serve mode, licence and provenance details: [docs/protocol.md](docs/protocol.md). Mac Studio numbers: [docs/benchmarks/mac-studio-m1-ultra.md](docs/benchmarks/mac-studio-m1-ultra.md).
+Stable Audio 3 on Apple Silicon uses Stability's MLX runtime (`[stable-audio-3-mlx]` extra; the MIT runtime is fetched at a pinned commit and weights come from the ungated `stable-audio-3-optimized` repo on first use). Elsewhere it uses the PyTorch library, which pins `torch==2.7.1` and `transformers>=5.8` (conflicting with ACE-Step, so its own venv) and needs Hugging Face gate access. Protocol, serve mode, licence and provenance details: [docs/protocol.md](docs/protocol.md). Mac Studio numbers: [docs/benchmarks/mac-studio-m1-ultra.md](docs/benchmarks/mac-studio-m1-ultra.md).
 
 ## JSON protocol v2 and the warm worker
 With `--json`, every command prints JSON lines only: `started`, `progress`, `done`, `error`, each with `protocol_version: 2` and a `job_id`. The v1 fields are unchanged, so `worker.rs` still parses them. `flux-ai serve` reads one JSON job request per line on stdin and keeps models loaded between jobs. See [docs/protocol.md](docs/protocol.md).
@@ -82,7 +82,7 @@ claude mcp add flux -- /path/to/.venv-mcp/bin/flux-mcp --engine /path/to/flux-en
 ## Verified so far
 - `separate`: Demucs `htdemucs`, 4 stems (macOS arm64, Python 3.13).
 - `transcribe`: three-note sine melody gave A4, C#5, E5 at the right times (Python 3.12, ONNX backend).
-- `generate` on a Mac Studio M1 Ultra (Python 3.12, `.venv-gen`): ACE-Step 1.5 turbo 34.7 s compute per audio minute and xl-turbo 42.6 s, both 5/5 seeds within ±1 BPM of 122; Magenta RT 2 base 83 s and small 51 s per audio minute, tempo not held. AMT generate/continue/infill ran. Stable Audio 3 installs but its weights are gated on Hugging Face (403 for this account). Details: [docs/benchmarks/mac-studio-m1-ultra.md](docs/benchmarks/mac-studio-m1-ultra.md).
+- `generate` on a Mac Studio M1 Ultra (Python 3.12, `.venv-gen`): ACE-Step 1.5 turbo 34.7 s compute per audio minute and xl-turbo 42.6 s, both 5/5 seeds within ±1 BPM of 122; Magenta RT 2 base 83 s and small 51 s per audio minute, tempo not held. AMT generate/continue/infill ran. Stable Audio 3 through MLX: Small-Music 1.7 s and Medium 4.4 s of compute per audio minute (about 35x and 14x real time), Medium 5/5 seeds within ±1 BPM, but key adherence 2/5 and 0/5. Details: [docs/benchmarks/mac-studio-m1-ultra.md](docs/benchmarks/mac-studio-m1-ultra.md).
 - Rust `worker` module runs `flux-ai --json` end to end (`cargo test -- --ignored` with `FLUX_AI_BIN` and `FLUX_AI_WAV`).
 
 ## CLAP plugin ("Flux AI Bridge")

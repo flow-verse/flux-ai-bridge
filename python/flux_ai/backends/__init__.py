@@ -60,7 +60,7 @@ class Backend(Protocol):
 _REGISTRY: dict[str, tuple[str, str, str, bool, bool]] = {
     "ace-step": ("flux_ai.backends.ace_step", "AceStepBackend", "ACE-Step 1.5: full songs 10 s-10 min, BPM/key conditioning, repaint/extend", True, False),
     "magenta-rt": ("flux_ai.backends.magenta_rt", "MagentaRTBackend", "Magenta RealTime 2 (MLX): streaming instrumental, text + MIDI-note control", True, False),
-    "stable-audio-3": ("flux_ai.backends.stable_audio_3", "StableAudio3Backend", "Stable Audio 3 Small/Medium: instrumental beds, inpainting (opt-in, $1M revenue cap)", False, True),
+    "stable-audio-3": ("flux_ai.backends.stable_audio_3", "StableAudio3Backend", "Stable Audio 3 Small-Music/Medium/Small-SFX: licensed-data music and sound beds, inpainting; MLX on Apple Silicon (opt-in, $1M revenue cap)", False, True),
     "amt": ("flux_ai.backends.amt", "AMTBackend", "Anticipatory Music Transformer: symbolic MIDI generate/continue/infill/accompany (.mid)", False, True),
     "sine-test": ("flux_ai.backends.sine_test", "SineTestBackend", "Deterministic tone generator for tests and CI (no weights)", False, False),
 }
