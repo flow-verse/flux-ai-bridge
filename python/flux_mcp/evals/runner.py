@@ -16,7 +16,7 @@ from mcp import Client
 from flux_mcp.evals.tasks import TASKS, Ctx, Task
 from flux_mcp.server import Config, Session, build_server
 
-DEFAULT_MODEL = "claude-opus-5-5"
+DEFAULT_MODEL = "claude-sonnet-5-5"  # cheaper default; pass --model claude-opus-5-5 when needed
 
 SYSTEM_PROMPT = """\
 You are a music production assistant operating the Flux DAW through its MCP tools. Complete the user's

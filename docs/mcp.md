@@ -191,13 +191,13 @@ Runners:
 export FLUX_ENGINE=/path/to/flux-engine FLUX_CLAP_PATH=/path/to/test_plugins/CLAP/Release
 .venv-mcp/bin/python -m flux_mcp.evals --list
 .venv-mcp/bin/python -m flux_mcp.evals --json scripted.json          # reference sequences (CI)
-ANTHROPIC_API_KEY=… .venv-mcp/bin/python -m flux_mcp.evals --llm --json llm.json [--model claude-opus-5-5]
+ANTHROPIC_API_KEY=… .venv-mcp/bin/python -m flux_mcp.evals --llm --json llm.json [--model claude-sonnet-5-5]
 ```
 
 The LLM runner is a manual tool-use loop over the Anthropic Messages API (`anthropic` Python SDK):
 the MCP tool list becomes the Claude tool list, each `tool_use` block is executed through the MCP
 client and returned as `tool_result` (with `is_error`), up to 25 turns. Default model
-`claude-opus-5-5` (override with `--model` or `FLUX_MCP_EVAL_MODEL`), effort `high`. It only sends
+`claude-sonnet-5-5` (override with `--model` or `FLUX_MCP_EVAL_MODEL`, e.g. `claude-opus-5-5`), effort `high`. It only sends
 the task prompt; the model must discover ids with the tools. No server-side model fallback is
 enabled, so a score always belongs to the model named; the report records the model that served
 each task. Without `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` the runner (and its pytest smoke test)

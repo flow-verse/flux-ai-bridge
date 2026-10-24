@@ -65,5 +65,5 @@ async def test_llm_runner_plumbing(engine_env, tmp_path):
                     reason="LLM eval needs ANTHROPIC_API_KEY; run `python -m flux_mcp.evals --llm` to measure")
 async def test_llm_suite_smoke(engine_env, tmp_path):  # pragma: no cover - needs network and credentials
     results = await run_suite("llm", ["set_tempo_90", "markers_song_form"], base=tmp_path, config=Config(),
-                              model=os.environ.get("FLUX_MCP_EVAL_MODEL", "claude-opus-5-5"))
+                              model=os.environ.get("FLUX_MCP_EVAL_MODEL", "claude-sonnet-5-5"))
     assert summary(results)["passed"] >= 1
