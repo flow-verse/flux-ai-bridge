@@ -258,8 +258,9 @@ async def _run(fn, *args):
     return await anyio.to_thread.run_sync(functools.partial(fn, *args))
 
 
-async def _with_heartbeat(ctx: Context | None, fn, message: str):
-    """Run a blocking call in a thread, reporting elapsed seconds as progress once a second."""
+async def _with_heartbeat(ctx: Context | None, fn, message: str, fraction=None):
+    """Run a blocking call in a thread, reporting progress once a second: `fraction()` (0..1) when it
+    returns a number, else elapsed seconds."""
     result: dict = {}
 
     async def work():
@@ -272,8 +273,12 @@ async def _with_heartbeat(ctx: Context | None, fn, message: str):
             await anyio.sleep(1.0)
             if ctx is not None:
                 s = time.monotonic() - t0
+                f = fraction() if fraction else None
                 try:
-                    await ctx.report_progress(round(s, 1), None, f"{message} ({s:.0f} s)")
+                    if f is not None:
+                        await ctx.report_progress(round(100 * f, 1), 100, f"{message} ({100 * f:.0f}%, {s:.0f} s)")
+                    else:
+                        await ctx.report_progress(round(s, 1), None, f"{message} ({s:.0f} s)")
                 except Exception:
                     return
 
@@ -666,7 +671,7 @@ def build_server(session: Session | None = None) -> MCPServer:
     ) -> dict[str, Any]:
         """Render the project offline to an audio file (and optional per-track stems). Not an edit and not
         undoable; it writes files to disk and refuses to replace existing files unless overwrite is true.
-        Reports progress (elapsed seconds) while rendering."""
+        Reports progress (percent of frames rendered) while rendering."""
         def prepare():
             proj = s.describe()
             if proj is None:
@@ -701,8 +706,15 @@ def build_server(session: Session | None = None) -> MCPServer:
         t0 = time.monotonic()
         if ctx is not None:
             await ctx.report_progress(0, None, "rendering")
-        # flux-engine's render reports no progress of its own: send elapsed seconds as a heartbeat
-        result = await _with_heartbeat(ctx, lambda: s.call("render", params, s.config.render_timeout), "rendering")
+        # flux-engine sends progress notifications; forward the latest once a second
+        s.engine.last_progress = None
+
+        def fraction():
+            lp = s.engine.last_progress
+            return float(lp["fraction"]) if lp and "fraction" in lp else None
+
+        result = await _with_heartbeat(ctx, lambda: s.call("render", params, s.config.render_timeout), "rendering",
+                                       fraction)
         if ctx is not None:
             el = round(time.monotonic() - t0, 2) + 0.01
             await ctx.report_progress(el, el, "done")

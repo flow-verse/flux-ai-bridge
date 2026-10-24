@@ -136,8 +136,8 @@ These come from the DAWZY study (state before edits, units in tools, atomic undo
 
 - flux-ai jobs forward the worker's `progress` events as `progress = fraction × 100`, `total = 100`,
   with the event's message (the worker throttles them to 1 % steps);
-- flux-engine's `render` has no progress of its own yet, so `render_mix` sends a heartbeat of elapsed
-  seconds (no total) once a second and a final `progress == total` when done.
+- `render_mix` forwards flux-engine's render `progress` notifications once a second as `progress = percent of
+  frames`, `total = 100` (elapsed seconds only until the first notification arrives).
 
 ## Safety model
 

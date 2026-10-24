@@ -80,6 +80,7 @@ class EngineClient:
         self.start_timeout = start_timeout
         self._proc: subprocess.Popen | None = None
         self._lock = threading.Lock()          # one request in flight (the engine is sequential anyway)
+        self.last_progress: dict | None = None
         self._pending: dict[int, dict] = {}
         self._cv = threading.Condition()
         self._next_id = 0
@@ -138,6 +139,9 @@ class EngineClient:
             with self._cv:
                 if msg.get("method") == "ready":
                     self._ready = msg.get("params") or {}
+                elif msg.get("method") == "progress":
+                    # render progress: {"request", "fraction", "frames", "total_frames", "track"}
+                    self.last_progress = msg.get("params") or {}
                 elif "id" in msg:
                     self._pending[msg["id"]] = msg
                 self._cv.notify_all()
