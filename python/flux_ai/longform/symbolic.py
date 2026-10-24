@@ -6,6 +6,19 @@ Everything is deterministic for a given plan section (seeds come from the
 plan). Microtonal pitches (maqam quarter tones) are written as per-note pitch
 bends with a +-2 semitone bend range, rotating notes over a pool of channels
 so polyphonic parts can carry different bends (MPE-style).
+
+Arrangement rules (generator version 2, after the first listening review):
+- layers that are new in a groove/build/peak section (relative to the previous
+  section of the same segment) enter one at a time over its first bars instead
+  of all at once, quiet layers first and kick and bass last; a build right after
+  a breakdown holds kick and bass back for the following peak (the drop), ends
+  with a fill and, in the built-in synth, carries a noise riser; a peak after a
+  build drops everything at bar 0;
+- in a transition overlap the hats, claps and percussion of only one section
+  play at a time (outgoing in the first half, incoming in the second), so the
+  two sections' drum jitter never flams; kicks are handled by the low-band swap;
+- the pad's chord tones come from the genre table (`pad.tones`), so a maqam
+  drone can be tonic + fifth + octave rather than a triad.
 """
 from __future__ import annotations
 
@@ -16,7 +29,7 @@ from pathlib import Path
 
 from . import genres, theory, timing
 
-GENERATOR_VERSION = "1"
+GENERATOR_VERSION = "2"
 TPB = timing.TICKS_PER_BEAT
 STEP = TPB // 4  # one sixteenth
 BAR = TPB * timing.BEATS_PER_BAR
@@ -26,6 +39,8 @@ DRUM_LAYERS = ["kick", "clap", "hat_closed", "hat_open", "perc", "ride"]
 CHANNELS = {"drums": [9], "bass": [0], "lead": [1, 2], "chords": [3, 4, 5, 6, 7, 8], "pad": [10, 11, 12, 13, 14, 15]}
 BEND_RANGE = 2.0  # semitones
 CC_BRIGHTNESS = 74
+# order in which layers new to a section come in (quiet ones first, kick last)
+STAGGER_ORDER = ("hat_closed", "perc", "clap", "hat_open", "ride", "chords", "pad", "lead", "bass", "kick")
 
 
 @dataclass
@@ -115,10 +130,27 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
         random.Random(s["seeds"]["section"] * 3 + 1).shuffle(rest)
         order = order[:1] + rest
     n_ph = (bars_ + 7) // 8
+    # staggered entries: layers new in this section (vs the previous one of the segment) come in one
+    # per few bars; after a build the drop is intended and everything starts together
+    prev = plan["sections"][index - 1] if index > 0 else None
+    entry: dict[str, int] = {}
+    if (prev is not None and prev.get("segment") == s.get("segment")
+            and (prev.get("transition_out") or {}).get("type", "continue") == "continue"
+            and prev["type"] != "build" and s["type"] in ("groove", "build", "peak")):
+        prev_layers = set(prev.get("layers", []))
+        hold = {"kick", "bass"} if s["type"] == "build" and prev["type"] == "breakdown" else set()
+        new = [x for x in STAGGER_ORDER if x in layers and x not in prev_layers and x not in hold]
+        span = min(8, bars_ // 2)
+        for j, x in enumerate(new):
+            entry[x] = (j * span) // len(new)
+        for x in hold:
+            entry[x] = bars_  # the drop belongs to the next section
+    ov_in = timing.overlap_bars(plan, index - 1) if index > 0 else 0
+    ov_out = timing.overlap_bars(plan, index)
 
     def active(layer: str, b: int) -> bool:
         """DJ-style intros/outros: layers enter (intro) or leave (outro) across 8-bar phrases."""
-        if layer not in layers:
+        if layer not in layers or b < entry.get(layer, 0):
             return False
         if n_ph < 2 or s["type"] not in ("intro", "outro") or len(order) < 2:
             return True
@@ -146,6 +178,8 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
         for inst in DRUM_LAYERS:
             if not active(inst, b):
                 continue
+            if inst != "kick" and ((ov_in and b < ov_in // 2) or (ov_out and b >= bars - ov_out + ov_out // 2)):
+                continue  # the other section's drums play this half of the overlap
             line = pat.get(inst, "") or ""
             if bp[b]["fill"] and fill.get(inst):
                 line = fill[inst]
@@ -174,7 +208,8 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
                 if v is None:
                     continue
                 jitter = 0 if inst == "kick" else rng.randint(-6, 6)
-                vel = min(1.0, v * (0.78 + 0.22 * e) + rng.uniform(-0.05, 0.05))
+                spread = 0.12 if inst in ("hat_closed", "hat_open", "perc", "ride") else 0.05
+                vel = min(1.0, v * (0.78 + 0.22 * e) + rng.uniform(-spread, spread))
                 start = b * BAR + max(0, _swing_tick(k, swing) + jitter)
                 notes.append(Note("drums", start, STEP // 2, GM_DRUMS[inst], vel))
         if s["type"] == "peak" and b % 16 == 0 and e > 0.7 and "ride" in g["drums"]["patterns"][s["patterns"]["drums"]] and "hat_open" in layers:
@@ -259,12 +294,16 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
 
     # ---- pad: held chord tones, one chord per run of equal bar chords
     if "pad" in layers:
+        pad_tones = list((g.get("pad") or {}).get("tones", [0, 2, 4]))
         b = 0
         while b < bars:
             run = 1
             while b + run < bars and bp[b + run]["chord"] == bp[b]["chord"] and run < 4:
                 run += 1
-            pitches = sorted({_fold(theory.degree_pitch(c_base, cents, bp[b]["chord"] + t), c_base - 3, c_base + 12) for t in (0, 2, 4)})
+            if not active("pad", b):
+                b += run
+                continue
+            pitches = sorted({_fold(theory.degree_pitch(c_base, cents, bp[b]["chord"] + t), c_base - 3, c_base + 12) for t in pad_tones})
             for p in pitches:
                 notes.append(Note("pad", b * BAR, run * BAR - STEP, p, 0.7))
             b += run
@@ -279,6 +318,8 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
         for b0 in range(0, bars, mb):
             ph = bp[b0]["phrase"]
             e = bp[b0]["energy"]
+            if not active("lead", b0):
+                continue
             # call/response: at lower energy the lead rests every other motif slot
             if e < 0.75 and (b0 // mb) % 2 == 1 and b0 % 8 != 0:
                 continue

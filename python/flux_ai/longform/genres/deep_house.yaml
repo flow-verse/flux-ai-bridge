@@ -2,6 +2,11 @@
 # STARTING VALUES FOR OWNER CURATION. These numbers are common-practice guesses
 # written for the long-form orchestrator, NOT sourced facts. Edit freely; the
 # planner, generator and renderer read everything from this file.
+# Revised 2026-10-24 after the first listening review of a Surge XT render
+# (assets/renders/GEMINI-REVIEW-2026-10-24.md + MEASUREMENTS.md): more swing and
+# hat velocity spread, a build before every peak, bass swap at the start of a
+# blend, outro without pad, chords 4.5 dB lower and low-passed, sparser lead,
+# deeper sidechain, more kick click.
 #
 # Grid strings are one bar of 16 sixteenth notes.
 #   drums:  x = hit, X = accent, o = ghost, . = rest
@@ -13,7 +18,7 @@ aliases: [deep-house, deephouse, house]
 tuning: 12tet
 bpm: {min: 118, max: 125}
 bpm_step_max: 2.0          # largest tempo change between consecutive segments
-swing: 0.53                # 0.5 = straight sixteenths
+swing: 0.56                # 0.5 = straight sixteenths; 0.56 = light deep-house shuffle
 key_system: camelot
 keys:
   start: ["A minor", "F minor", "D minor", "G minor", "C minor", "E minor"]
@@ -23,17 +28,17 @@ keys:
 segment:
   target_minutes: 5.5
   forms:
-    classic: [[intro, 16], [groove, 32], [build, 16], [peak, 32], [breakdown, 16], [peak, 32], [outro, 16]]
+    classic: [[intro, 16], [groove, 32], [build, 16], [peak, 32], [breakdown, 16], [build, 8], [peak, 32], [outro, 16]]
     long_groove: [[intro, 16], [groove, 32], [groove, 16], [build, 8], [peak, 32], [breakdown, 16], [build, 8], [peak, 24], [outro, 16]]
-    short: [[intro, 16], [groove, 24], [breakdown, 8], [peak, 32], [outro, 16]]
-  transition: {type: blend, bars: 16, eq: true, bass_swap: true}
+    short: [[intro, 16], [groove, 24], [breakdown, 8], [build, 8], [peak, 32], [outro, 16]]
+  transition: {type: blend, bars: 16, eq: true, bass_swap: true, swap_at: 0.0}
 section_types:
   intro:     {energy: -0.20, mute: [lead, clap, perc]}
   groove:    {energy: -0.05, mute: [lead]}
   build:     {energy: 0.05, mute: [], riser: true}
   peak:      {energy: 0.15, mute: []}
-  breakdown: {energy: -0.30, mute: [kick, bass, hat_closed, clap], add: [pad, lead]}
-  outro:     {energy: -0.20, mute: [lead, chords]}
+  breakdown: {energy: -0.20, mute: [kick, bass, hat_closed, clap], add: [pad, lead]}
+  outro:     {energy: -0.20, mute: [lead, chords, pad]}   # nothing pitched but bass under the incoming key
 energy_curves:
   warmup_two_peaks: [[0.0, 0.30], [0.25, 0.65], [0.40, 0.85], [0.55, 0.60], [0.80, 0.95], [1.0, 0.40]]
   slow_climb:       [[0.0, 0.30], [0.70, 0.90], [0.85, 0.95], [1.0, 0.45]]
@@ -79,18 +84,17 @@ chords:
   rhythms:
     stab_a: "x..x..x...x..x.."
     stab_b: "..x...x...x..x.."
-    held:   "x-------x-------"
     pulse:  "x.x.x.x.x.x.x.x."
 lead:
   octave: 5
   motif_bars: [1, 2]
-  notes_per_bar: [3, 6]
+  notes_per_bar: [2, 4]
   range_degrees: [-2, 9]
 motif_pool: 10
 transforms: [identity, up2, down3, invert, retrograde, shift]
 no_repeat: {form: 1, drums: 2, bass: 2, progression: 4, chord_rhythm: 1, motif: 5}
 timbre:
-  kick:       {freq: 50, pitch_amount: 3.0, pitch_decay: 0.04, decay: 0.38, click: 0.3, level_db: -4}
+  kick:       {freq: 50, tune_to_key: true, pitch_amount: 3.0, pitch_decay: 0.04, decay: 0.38, click: 0.5, level_db: -4}   # tune_to_key: fundamental on the section tonic nearest 50 Hz (A1 = 55, B1 = 61.7)
   clap:       {decay: 0.18, tone: 1500, level_db: -14}
   hat_closed: {decay: 0.045, tone: 8000, level_db: -20}
   hat_open:   {decay: 0.22, tone: 7500, level_db: -22}
@@ -100,7 +104,7 @@ timbre:
   chords: {wave: saw, voices: 2, detune_cents: 9, cutoff: 1300, env_amount: 1.8, env_decay: 0.18, attack: 0.004, decay: 0.25, sustain: 0.35, release: 0.18, level_db: -21, reverb: 0.35, delay: 0.18}
   pad:   {wave: saw, voices: 3, detune_cents: 12, cutoff: 900, env_amount: 0.3, env_decay: 1.0, attack: 0.8, decay: 1.0, sustain: 0.8, release: 1.2, level_db: -25, reverb: 0.5}
   lead:  {wave: square, voices: 1, cutoff: 2200, env_amount: 2.0, env_decay: 0.15, attack: 0.005, decay: 0.15, sustain: 0.4, release: 0.12, level_db: -22, reverb: 0.3, delay: 0.3, vibrato_cents: 0}
-  sidechain: {depth: 0.45, release: 0.16}
+  sidechain: {depth: 0.6, release: 0.12}
   reverb: {seconds: 1.8}
   texture: none
 neural:
@@ -119,4 +123,7 @@ flux_host:
   # Measured patch levels (flux-engine, test phrase per layer, after transpose) offset so the mix keeps
   # the timbre table's balance relative to the bass.
   gain_db:
-    "Surge XT": {bass: 0.0, chords: -6.1, pad: -8.5, lead: -3.8}
+    "Surge XT": {bass: 0.0, chords: -10.6, pad: -5.5, lead: -6.8}
+  # Post-render filters per layer (Hz): keep chords and lead out of the kick/bass register, tame bright patches.
+  eq:
+    "Surge XT": {chords: {highpass: 200, lowpass: 1800}, lead: {highpass: 200, lowpass: 5000}, pad: {highpass: 120}}

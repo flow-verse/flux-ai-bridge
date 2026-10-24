@@ -78,7 +78,7 @@ Three levels:
   mode or a maqam from the genre table), `camelot`, `energy`/`energy_end`,
   `bars`, `layers`, `seeds`, `patterns` (drum/bass/progression/chord-rhythm
   IDs from the genre table), `motif` (`{id, transform}`), `transition_out`
-  (`continue` | `blend` | `fade`, `bars`, `eq`, `bass_swap`), optional
+  (`continue` | `blend` | `fade`, `bars`, `eq`, `bass_swap`, `swap_at`), optional
   `neural` (`{backend, prompt, gain_db, seed}`).
 - **Bar**: `bar_plan[]` with `chord` (scale degree), `energy`, `phrase`,
   `variation`, `fill`.
@@ -119,10 +119,21 @@ allowed for annotations.
 5. **Transitions** (`transitions.py`). Tempo is stored per beat as integer
    microseconds, so overlapping sections are sample-aligned. `blend`: high
    band (mix − low) equal-power crossfade over the overlap, low band swapped
-   over one beat at the middle bar (bass swap); tempo changes become a linear
-   per-beat ramp across the overlap in both sections' MIDI. `fade`:
-   equal-power full-band crossfade. `continue`: next section starts on the
-   bar line while the previous one's release tail plays out.
+   over one beat at the bar given by `swap_at` (fraction of the overlap;
+   genre table `segment.transition.swap_at`, default 0.5 = middle, 0 = the
+   first bar so the outgoing bass never plays under the incoming key); tempo
+   changes become a linear per-beat ramp across the overlap in both sections'
+   MIDI. The generator lets only one section's hats, claps and percussion
+   play in each half of the overlap (outgoing first), so two sections' timing
+   jitter never flams. `fade`: equal-power full-band crossfade. `continue`:
+   next section starts on the bar line while the previous one's release tail
+   plays out; layers new to a groove, build or peak enter one at a time over
+   its first bars, quiet layers first and kick and bass last. A build right
+   after a breakdown holds kick and bass for the following peak (the drop),
+   ends with a drum fill and, when the table marks the section type
+   `riser: true`, carries a swept noise riser from the built-in synth
+   (`riser_db`, default −26). A peak after a build still drops at bar 0. The
+   set ends with a 4-bar fade.
 6. **Master** (`master.py`). Pass 1 streams the assembled mix through a
    BS.1770 meter (pyloudnorm's K-weighting coefficients, filter state carried
    between chunks; matches `pyloudnorm` within 0.05 LU in tests). Pass 2
@@ -342,6 +353,26 @@ two measured corrections for that plugin:
   layer after transposing).
 
 Override per run with `--flux-preset LAYER=NAME` (MCP: `flux_presets`).
+
+### Genre-table knobs added after the first listening review (2026-10-24)
+
+Two Surge XT renders (`assets/renders/`) were reviewed by an audio-capable model
+with the prompt in `assets/renders/LISTENING-PROMPT.md`; the measurements and
+the review's verdicts are next to them. Table keys that came out of it:
+
+| Key | Meaning |
+|---|---|
+| `segment.transition.swap_at` | where the kick + bass swap sits in a blend (0 = first bar) |
+| `pad.tones` | scale steps of the pad chord (default `[0, 2, 4]`; maqam uses `[0, 4, 7]`, no third) |
+| `lead.degree_weights` | melodic preference per scale degree (the jins of a maqam) |
+| `lead.rest_degrees` | the last note of every motif snaps to the nearest of these |
+| `timbre.kick.tune_to_key` | built-in kick fundamental on the section tonic nearest `freq` |
+| `flux_host.eq.<plugin>.<layer>` | `{highpass, lowpass}` Hz applied to the engine stem |
+
+Generator version 2 (staggered entries, drum hand-off in overlaps, pad tones
+from the table) changes every section hash, so old run directories re-render.
+The planner now gives each segment two themes from the motif library: the
+grooves and breakdowns play a B theme, the other sections the A theme.
 
 ### Maqam quarter tones through flux-host
 

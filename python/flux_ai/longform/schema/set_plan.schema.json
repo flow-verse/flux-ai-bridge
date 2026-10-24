@@ -106,7 +106,8 @@
             "type": {"enum": ["continue", "blend", "fade"]},
             "bars": {"type": "integer", "minimum": 0, "maximum": 64},
             "eq": {"type": "boolean"},
-            "bass_swap": {"type": "boolean"}
+            "bass_swap": {"type": "boolean"},
+            "swap_at": {"type": "number", "minimum": 0, "maximum": 1, "description": "Where in the overlap the low band (kick + bass) swaps, as a fraction (0 = first bar, 0.5 = middle)."}
           }
         },
         "neural": {

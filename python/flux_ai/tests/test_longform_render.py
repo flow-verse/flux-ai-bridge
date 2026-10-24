@@ -61,9 +61,12 @@ def test_transition_joins_have_no_discontinuity(run):
     x, sr = sf.read(rep["outputs"]["master"], dtype="float64")
     assert rep["joins_checked"] >= 1 and rep["join_clicks"] == 0
     assert len(analysis.find_discontinuities(x, sr)) == 0
-    # the detector itself catches a step of the size a hard cut would cause
+    # the detector itself catches a step of the size a hard cut would cause (injected where the
+    # programme is smoothest; inside a noise riser a 0.2 step is, by design, not an isolated jump)
     y = x.copy()
-    k = len(y) // 2
+    d = np.abs(np.diff(y, axis=0)).max(axis=1)
+    local = np.convolve(d, np.ones(int(0.1 * sr)), mode="same")
+    k = int(np.argmin(local[sr:-sr])) + sr
     y[k:] += 0.2
     assert k - 1 in set(analysis.find_discontinuities(y, sr).tolist())
 

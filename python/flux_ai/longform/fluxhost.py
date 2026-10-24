@@ -27,6 +27,12 @@ layers, as it does in the built-in renderer. With a drum instrument the kick
 (GM note 36) gets its own track so the ``low`` stem (kick + bass) for bass-swap
 transitions can still be formed.
 
+EQ. The genre table may give each layer a post-render filter for its plugin
+(``flux_host.eq.<plugin>.<layer>: {highpass: Hz, lowpass: Hz}``, second-order
+Butterworth), applied to the engine stem before the gain and the sidechain duck:
+a high-pass keeps chords and leads out of the kick and bass register, a low-pass
+tames a bright patch. Plugins expose no such control through the engine API.
+
 What the engine API cannot carry yet (rounded or dropped, counted in the section
 stats): pitch bend (maqam quarter tones are rounded to the nearest semitone),
 CC74 brightness automation, and presets (``load_preset`` does not exist, so a
@@ -272,6 +278,18 @@ class FluxHostRenderer(render.Renderer):
             out[layer] = float(per.get(layer, 2.0) if isinstance(per, dict) else (per or 2.0))
         return out
 
+    def layer_eq(self, genre: dict, resolved: dict[str, dict | None]) -> dict[str, dict]:
+        """Post-render filters per layer for its instrument (genre flux_host.eq per plugin name:
+        {layer: {highpass: Hz, lowpass: Hz}}); empty when the table has none."""
+        table = (genre.get("flux_host") or {}).get("eq") or {}
+        out: dict[str, dict] = {}
+        for layer, plugin in resolved.items():
+            per = table.get(plugin.get("name")) if plugin else None
+            f = (per or {}).get(layer) if isinstance(per, dict) else None
+            if isinstance(f, dict) and (f.get("highpass") or f.get("lowpass")):
+                out[layer] = {k: float(f[k]) for k in ("highpass", "lowpass") if f.get(k)}
+        return out
+
     def identity(self) -> dict:
         """Everything that changes the audio: engine build, plugins, this code. Starts the engine."""
         if self._identity is None:
@@ -347,6 +365,7 @@ class FluxHostRenderer(render.Renderer):
 
         stems, info = eng
         level = {k: synth.db(v) for k, v in self.layer_gains(genre, resolved).items()}
+        eq = self.layer_eq(genre, resolved)
         low, high = base.low, base.high
         duck = base.duck[:, None]
         for track, x in stems.items():
@@ -354,6 +373,14 @@ class FluxHostRenderer(render.Renderer):
             if name in ("kick", "drums"):
                 (low if name == "kick" else high)[:] += x * level.get("drums", 1.0)
             else:
+                f = eq.get(name)
+                if f:
+                    x = x.copy()
+                    for c in range(x.shape[1]):
+                        if f.get("highpass"):
+                            x[:, c] = synth.hp(x[:, c], f["highpass"], sr)
+                        if f.get("lowpass"):
+                            x[:, c] = synth.lp(x[:, c], f["lowpass"], sr)
                 y = x * (level.get(name, 1.0) * duck)
                 (low if name == "bass" else high)[:] += y
         layers_used = {base_layer(t) for t in clips}
@@ -362,6 +389,7 @@ class FluxHostRenderer(render.Renderer):
                              if layer in layers_used or (layer == "drums" and drums_builtin)},
                  "presets": {layer: p for layer, p in layer_preset.items() if p and layer in layers_used},
                  "transpose": {layer: k for layer, k in shift.items() if k and layer in layers_used},
+                 "eq": {layer: f for layer, f in eq.items() if layer in layers_used},
                  "engine": info, "conversion": {**conv, **micro,
                                                 "pitch_bend": "microtones carried as a fixed pitch bend on one extra "
                                                               "instrument track per cent offset",

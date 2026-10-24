@@ -22,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import genres, synth, timing
+from . import genres, synth, theory, timing
 
 MELODIC = ("bass", "chords", "pad", "lead")
 DRUM_BY_NOTE = {36: "kick", 37: "perc", 39: "clap", 42: "hat_closed", 46: "hat_open", 51: "ride", 49: "crash"}
@@ -191,12 +191,23 @@ class BuiltinSynthRenderer(Renderer):
         # drums: a few pre-rendered variants per instrument
         shots: dict[str, list[np.ndarray]] = {}
         kick_on, kick_vel = [], []
+        drum_params = {k: dict(v) for k, v in tim.items() if isinstance(v, dict) and k in DRUM_BY_NOTE.values()}
+        kp = drum_params.get("kick")
+        if kp and kp.get("tune_to_key") and section_plan.get("key"):
+            # kick fundamental on the section's tonic, in the octave nearest the table's frequency
+            f0 = float(kp.get("freq", 50))
+            hz = synth.midi_to_hz(theory.tonic_midi(section_plan["key"], 0))
+            while hz > f0 * 1.4142:
+                hz /= 2
+            while hz < f0 / 1.4142:
+                hz *= 2
+            kp["freq"] = hz
         for nt in (x for x in notes if x.track == "drums"):
             inst = DRUM_BY_NOTE.get(int(round(nt.pitch)))
             if inst is None:
                 continue
             if inst not in shots:
-                shots[inst] = [synth.drum_oneshot(inst, tim.get(inst, {}), sr, rng) for _ in range(4)]
+                shots[inst] = [synth.drum_oneshot(inst, drum_params.get(inst, {}), sr, rng) for _ in range(4)]
             x = shots[inst][int(rng.integers(0, 4))]
             s0 = int(round(nt.start * sr))
             v = nt.vel ** 1.6
@@ -209,6 +220,25 @@ class BuiltinSynthRenderer(Renderer):
                 synth.add_at(high, x * v, s0, gl, gr)
                 if inst in ("clap", "perc"):
                     synth.add_at(rev_send, x * v * 0.25, s0, gl, gr)
+
+        # noise riser over a build section (table section_types.<type>.riser), swept up with the bars
+        st = (g.get("section_types") or {}).get(section_plan.get("type", ""), {})
+        if st.get("riser") and body > sr and (tracks is None or "drums" in tracks):
+            riser = np.zeros(body, dtype=np.float32)
+            noise = rng.standard_normal(body).astype(np.float32)
+            k = 24
+            hop = body // k
+            win = np.hanning(2 * hop).astype(np.float32)
+            for j in range(k + 1):  # 50% overlap-add of band-passed chunks, centre 250 Hz -> 5 kHz
+                a = j * hop - hop
+                lo, hi = max(a, 0), min(a + 2 * hop, body)
+                if hi <= lo:
+                    continue
+                fc = 250.0 * (5000.0 / 250.0) ** (j / k)
+                riser[lo:hi] += synth.bp(noise[lo:hi], fc, sr, 0.9).astype(np.float32) * win[lo - a:hi - a]
+            env = (np.arange(body, dtype=np.float32) / body) ** 2
+            riser *= env * synth.db(float(st.get("riser_db", -26)))
+            synth.add_at(high, synth.edge_ramps(riser, sr, 0.01, 0.01), 0, *synth.pan_gains(0.0))
 
         # melodic voices
         for nt in (x for x in notes if x.track in MELODIC):

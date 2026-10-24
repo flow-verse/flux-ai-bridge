@@ -185,7 +185,7 @@ def _bar_plan(g: dict, s: dict, rng: random.Random) -> list[dict]:
             "energy": round(e0 + (e1 - e0) * x, 3),
             "phrase": b // 8,
             "variation": rng.randrange(1000),
-            "fill": (not no_fill) and (b % 8 == 7) and (b // 8) % 2 == 1,
+            "fill": ((not no_fill) and (b % 8 == 7) and (b // 8) % 2 == 1) or (s["type"] == "build" and b == s["bars"] - 1),
         })
     return out
 
@@ -194,6 +194,14 @@ def _make_motifs(g: dict, rng: random.Random) -> list[dict]:
     lead = g["lead"]
     lo, hi = lead.get("range_degrees", [-2, 9])
     stepwise = bool(lead.get("stepwise", False))
+    # optional melodic style: per-degree preference (e.g. the jins of a maqam) and the degrees a
+    # phrase may rest on (its last note snaps to the nearest one)
+    pref = {int(k): float(v) for k, v in (lead.get("degree_weights") or {}).items()}
+    rest = [int(x) for x in (lead.get("rest_degrees") or [])]
+    step_w = [2, 4, 4, 2, 1, 1, 0.5 if not stepwise else 0, 0.5 if not stepwise else 0]
+    if stepwise:
+        step_w[0] = step_w[3] = 1.0   # +-2 (a third) rarer, +-3 rare: conjunct lines
+        step_w[4] = step_w[5] = 0.3
     motifs = []
     for k in range(int(g.get("motif_pool", 8))):
         bars = rng.choice(lead.get("motif_bars", [1, 2]))
@@ -206,14 +214,19 @@ def _make_motifs(g: dict, rng: random.Random) -> list[dict]:
         if starts[0] != 0 and rng.random() < 0.6:
             starts[0] = 0
         starts = sorted(set(starts))
-        notes, deg = [], rng.choice([0, 2, 4])
+        notes, deg = [], rng.choice(list(lead.get("start_degrees", [0, 2, 4])))
         for j, st in enumerate(starts):
             nxt = starts[j + 1] if j + 1 < len(starts) else steps
             length = max(1, min(nxt - st, rng.choice([1, 2, 2, 3, 4])))
             vel = round(rng.uniform(0.62, 1.0), 2)
             notes.append([st, length, deg, vel])
-            step = _weighted(rng, [-2, -1, 1, 2, -3, 3, 4, -4], [2, 4, 4, 2, 1, 1, 0.5 if not stepwise else 0, 0.5 if not stepwise else 0])
+            cands = [-2, -1, 1, 2, -3, 3, 4, -4]
+            w = [sw * pref.get(min(hi, max(lo, deg + st)), 1.0) for st, sw in zip(cands, step_w)]
+            step = _weighted(rng, cands, w)
             deg = min(hi, max(lo, deg + step))
+        if rest and notes:
+            last = notes[-1][2]
+            notes[-1][2] = min(rest, key=lambda r: (abs(r - last), r))
         motifs.append({"id": f"m{k:02d}", "bars": bars, "notes": notes})
     return motifs
 
@@ -277,6 +290,7 @@ def plan(genre: str, hours: float, seed: int = 0, constraints: dict | None = Non
 
     motifs = _make_motifs(g, random.Random(derive_seed(seed, "motifs", g["name"])))
     history: dict[str, list] = {k: [] for k in PATTERN_FIELDS}
+    b_history: list[str] = []
     key_hist: list[str] = []
     key = _parse_key(c["start_key"]) if c.get("start_key") else _parse_key(rng.choice(g["keys"]["start"]))
     key_move = "start"
@@ -298,6 +312,13 @@ def plan(genre: str, hours: float, seed: int = 0, constraints: dict | None = Non
         transform = rng.choice(g.get("transforms", ["identity"]))
         for k, v in pick.items():
             history[k].append(v)
+        # a second theme for the grooves and breakdowns of this segment, so one segment is not one motif
+        # looped; it avoids the A themes in the no-repeat window (which already holds this segment's) and
+        # the last two B themes, and is kept out of history["motif"] so the A-theme window stays as declared
+        recent = history["motif"][-max(1, windows["motif"]):] + b_history[-2:]
+        motif_b = _pick_no_repeat(rng, [m["id"] for m in motifs], recent, len(recent))
+        b_history.append(motif_b)
+        transform_b = rng.choice(g.get("transforms", ["identity"]))
 
         form = [list(x) for x in g["segment"]["forms"][pick["form"]]]
         # scale the form to the requested segment length (bars in multiples of 4)
@@ -352,7 +373,8 @@ def plan(genre: str, hours: float, seed: int = 0, constraints: dict | None = Non
                           "render": derive_seed(sseed, "render")},
                 "patterns": {"form": pick["form"], "drums": pick["drums"], "bass": pick["bass"],
                              "progression": pick["progression"], "chord_rhythm": pick["chord_rhythm"]},
-                "motif": {"id": pick["motif"], "transform": transform},
+                "motif": {"id": motif_b, "transform": transform_b} if stype in ("groove", "breakdown")
+                         else {"id": pick["motif"], "transform": transform},
                 "transition_out": {"type": "continue", "bars": 0},
                 "neural": None,
             }
@@ -371,7 +393,8 @@ def plan(genre: str, hours: float, seed: int = 0, constraints: dict | None = Non
         if not last:
             tb = min(int(trans["bars"]), sections[-1]["bars"])
             sections[-1]["transition_out"] = {"type": trans["type"], "bars": tb,
-                                              "eq": bool(trans.get("eq", True)), "bass_swap": bool(trans.get("bass_swap", True))}
+                                              "eq": bool(trans.get("eq", True)), "bass_swap": bool(trans.get("bass_swap", True)),
+                                              "swap_at": float(trans.get("swap_at", 0.5))}
             t -= tb * bar_s  # the next segment starts inside this one's last bars
         key_hist.append(theory.camelot(key) or key_str_safe(key))
         key, key_move = _next_key(g, rng, key, key_hist)

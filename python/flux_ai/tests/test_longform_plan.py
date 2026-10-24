@@ -2,13 +2,14 @@
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 pytest.importorskip("jsonschema")
 pytest.importorskip("mido")
 
 from flux_ai import cli  # noqa: E402
-from flux_ai.longform import genres, planner, render, symbolic, theory, timing  # noqa: E402
+from flux_ai.longform import genres, planner, render, symbolic, theory, timing, transitions  # noqa: E402
 
 GENRES = ["deep house", "techno", "lo-fi hip hop", "ambient", "maqam groove"]
 
@@ -102,7 +103,8 @@ def test_midi_is_deterministic_and_carries_tempo_map(tmp_path: Path):
 
 def test_maqam_quarter_tones_survive_midi_round_trip(tmp_path: Path):
     p = planner.plan("maqam", 0.2, seed=4, constraints={"start_key": "D bayati"}).data
-    i = next(k for k, s in enumerate(p["sections"]) if "lead" in s["layers"] and s["key"]["mode"] == "bayati")
+    # the first groove in bayati (an 8-bar intro may play one motif variation that skips degree 1)
+    i = next(k for k, s in enumerate(p["sections"]) if "lead" in s["layers"] and s["key"]["mode"] == "bayati" and s["type"] == "groove")
     out = tmp_path / "m.mid"
     symbolic.write_midi(p, i, out)
     notes, _ = render.parse_midi(out)
@@ -126,3 +128,97 @@ def test_cli_reports_errors_as_events(tmp_path: Path, capsys):
     rc = cli.main(["longform", "--genre", "polka-metal", "--plan-only", "--out", str(tmp_path), "--json"])
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert rc == 1 and lines[-1]["event"] == "error" and "unknown genre" in lines[-1]["message"]
+
+
+# ---------------------------------------------------------------- arrangement rules (generator v2)
+
+def _notes(plan, i):
+    return symbolic.generate_notes(plan.data, i)[0]
+
+
+def test_new_layers_enter_staggered_after_a_breakdown():
+    p = planner.plan("deep house", 0.1666667, seed=1)
+    secs = p.sections
+    i = next(i for i in range(1, len(secs)) if secs[i - 1]["type"] == "breakdown" and secs[i]["type"] == "build")
+    new = [l for l in secs[i]["layers"] if l not in secs[i - 1]["layers"]]
+    assert "kick" in new and "bass" in new and "hat_closed" in new
+    first = {}
+    for n in _notes(p, i):
+        key = {v: k for k, v in symbolic.GM_DRUMS.items()}[int(n.pitch)] if n.track == "drums" else n.track
+        first[key] = min(first.get(key, 10 ** 9), n.start)
+    assert "kick" not in first and "bass" not in first  # held back for the drop
+    bars = {l: first[l] // symbolic.BAR for l in new if l in first}
+    assert bars["hat_closed"] == 0 and max(bars.values()) >= 1
+    assert secs[i]["bar_plan"][-1]["fill"]  # a build ends with a fill
+    # a peak right after a build still drops everything at once
+    j = next(j for j in range(1, len(secs)) if secs[j - 1]["type"] == "build" and secs[j]["type"] == "peak")
+    first = {}
+    for n in _notes(p, j):
+        if n.track == "drums":
+            first[int(n.pitch)] = min(first.get(int(n.pitch), 10 ** 9), n.start)
+    assert all(t < symbolic.BAR for t in first.values())
+
+
+def test_overlap_drums_hand_off_between_sections():
+    p = planner.plan("deep house", 0.1666667, seed=1)
+    secs = p.sections
+    i = next(i for i, s in enumerate(secs) if s["transition_out"]["type"] == "blend")
+    tb = secs[i]["transition_out"]["bars"]
+    assert secs[i]["transition_out"]["swap_at"] == 0.0
+    hat = symbolic.GM_DRUMS["hat_closed"]
+    out_bars = {n.start // symbolic.BAR for n in _notes(p, i) if n.track == "drums" and int(n.pitch) == hat}
+    in_bars = {n.start // symbolic.BAR for n in _notes(p, i + 1) if n.track == "drums" and int(n.pitch) == hat}
+    assert not any(b >= secs[i]["bars"] - tb + tb // 2 for b in out_bars)
+    assert not any(b < tb // 2 for b in in_bars)
+    assert in_bars and out_bars
+    # the low band swaps at the first bar of the overlap
+    tl = transitions.Timeline(p.data, [transitions.SectionAudio(k, Path("x"), Path("y"), 1.0, 10) for k in range(len(secs))], 48000)
+    assert tl.placed[i + 1].swap_at == tl.placed[i + 1].start
+
+
+def test_maqam_pad_has_no_third_and_melody_rests_on_tonic_or_ghammaz():
+    p = planner.plan("maqam", 0.051, seed=3)
+    tonic = theory.pitch_class("D")
+    for i, s in enumerate(p.sections):
+        for n in _notes(p, i):
+            if n.track == "pad":
+                assert round((n.pitch - tonic) * 100) % 1200 in (0, 500, 700), n.pitch  # D, G (drone roots) and their fifths
+    for m in p.data["motifs"]:
+        assert m["notes"][-1][2] in (0, 3)
+    degs = [n[2] for m in p.data["motifs"] for n in m["notes"]]
+    assert degs.count(2) >= len(degs) * 0.1  # F (degree 2) is part of the tune
+
+
+def test_set_ends_with_a_fade():
+    p = planner.plan("techno", 0.05, seed=2)
+    n = len(p.sections)
+    tl = transitions.Timeline(p.data, [transitions.SectionAudio(k, Path("x"), Path("y"), 1.0, 10 ** 8) for k in range(n)], 48000)
+    last = tl.placed[-1]
+    rel = np.array([tl.fade_from - last.start - 1, (tl.fade_from + tl.end_of_body) // 2 - last.start, tl.end_of_body - last.start - 1])
+    gl, gh = tl.gains(last, rel)
+    assert gh[0] == 1.0 and 0.5 < gh[1] < 0.9 and gh[2] < 0.01
+    assert np.allclose(gl, gh)
+
+
+def test_flux_host_layer_eq_comes_from_the_genre_table():
+    from flux_ai.longform.fluxhost import FluxHostRenderer
+
+    r = FluxHostRenderer(engine="/nonexistent")
+    surge = {"name": "Surge XT"}
+    eq = r.layer_eq(genres.load("deep house"), {"bass": surge, "chords": surge, "lead": surge, "pad": surge, "drums": None})
+    assert eq["chords"] == {"highpass": 200.0, "lowpass": 1800.0} and "bass" not in eq
+    assert r.layer_eq(genres.load("techno"), {"chords": surge}) == {}
+
+
+def test_build_section_carries_a_riser_in_the_builtin_synth(tmp_path: Path):
+    p = planner.plan("deep house", 0.1666667, seed=1).data
+    i = next(i for i, s in enumerate(p["sections"]) if s["type"] == "build")
+    r = render.BuiltinSynthRenderer(sample_rate=12000, tail_seconds=0.5)
+    notes, body_s = [], p["sections"][i]["bars"] * 4 * 60 / p["sections"][i]["bpm"]
+    quiet = r.synthesize(notes, body_s, {**p["sections"][i], "type": "groove"}, tracks={"drums"})
+    riser = r.synthesize(notes, body_s, p["sections"][i], tracks={"drums"})
+    assert not np.any(quiet.high)
+    b = riser.body_frames
+    e_first, e_last = np.mean(riser.high[: b // 4] ** 2), np.mean(riser.high[3 * b // 4: b] ** 2)
+    assert e_last > 20 * e_first > 0
+

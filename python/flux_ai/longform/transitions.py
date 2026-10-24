@@ -8,9 +8,13 @@ so their bars coincide to the sample. Each section arrives as a mix plus a
 sum back to the original exactly.
 
 - blend: high band equal-power crossfade over the overlap; with bass_swap the
-  low band swaps over one beat at the bar in the middle of the overlap
-  (outgoing low out, incoming low in, never both at once). With eq=false both
-  bands follow the high-band curve.
+  low band swaps over one beat at a bar of the overlap (`swap_at`, a fraction
+  of the overlap, default 0.5 = the middle bar; 0 = the first bar, so the new
+  key's bass and kick arrive with the first incoming chords and the outgoing
+  bass never plays under them). Outgoing low out, incoming low in, never both
+  at once. With eq=false both bands follow the high-band curve.
+- the set ends with an END_FADE_BARS fade to silence over the last bars of the
+  final section, so a plan that stops on a bar line does not cut off.
 - fade: equal-power crossfade of the full mix over the overlap.
 - continue: no overlap; the next section starts at the bar line and the
   previous section's release tail plays out under it.
@@ -58,6 +62,9 @@ class _Placed:
     swap_w_out: int
 
 
+END_FADE_BARS = 4
+
+
 def _s(us: float, sr: int) -> int:
     return timing.us_to_samples(us, sr)
 
@@ -76,7 +83,10 @@ class Timeline:
             i = p.index
             if i > 0 and p.overlap_in_bars:
                 prev_t = secs[i - 1]["transition_out"]
-                k = max(1, p.overlap_in_bars // 2) if p.overlap_in_bars > 1 else 0
+                frac = float(prev_t.get("swap_at", 0.5))
+                k = min(p.overlap_in_bars - 1, max(0, int(round(p.overlap_in_bars * frac))))
+                if frac >= 0.5 and p.overlap_in_bars > 1:
+                    k = max(1, k)
                 beat_us = timing.section_beat_us(plan, i)
                 w_us = beat_us[min(len(beat_us) - 1, k * timing.BEATS_PER_BAR)]
                 at = _s(p.start_us + p.bar_starts_us[k], sr)
@@ -111,6 +121,9 @@ class Timeline:
         last = self.placed[-1]
         self.total = max(p.start + p.audio.frames for p in self.placed)
         self.end_of_body = last.start + last.body
+        lp = places[-1]
+        nb = len(lp.bar_starts_us) - 1
+        self.fade_from = last.start + _s(lp.bar_starts_us[max(0, nb - END_FADE_BARS)], sr)
 
     # ------------------------------------------------------------------ gains
     def gains(self, p: _Placed, rel: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -150,6 +163,13 @@ class Timeline:
             m = rel < f
             gh[m] *= rel[m] / f
             gl[m] *= rel[m] / f
+        if p.index == self.placed[-1].index:  # end of set: fade the last bars, silence after the body
+            g0 = rel + p.start
+            m = g0 >= self.fade_from
+            span = max(1, self.end_of_body - self.fade_from)
+            w = np.cos(np.pi / 2 * np.clip((g0[m] - self.fade_from) / span, 0, 1))
+            gh[m] *= w
+            gl[m] *= w
         return gl, gh
 
     # ------------------------------------------------------------------ I/O
