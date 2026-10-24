@@ -197,10 +197,10 @@ stems. The built-in kick also drives the genre's sidechain ducking of the
 engine layers. With a drum instrument, the kick (GM 36) gets its own track so
 the `low` stem can still be formed, and no built-in audio is used.
 
-**Not carried yet** (engine API gaps, counted in each section's `meta.json` →
-`stats.conversion`): pitch bend (maqam quarter tones are rounded to the nearest
-semitone), CC74 brightness automation, and presets (there is no `load_preset`,
-so each plugin plays its default patch).
+**Not carried yet** (counted in each section's `meta.json` →
+`stats.conversion`): CC74 brightness automation (the engine accepts CC events
+now; mapping CC74 to each patch's filter is still to do). Quarter tones and
+presets are carried; see the sections below.
 
 ### Decision log (provenance)
 
