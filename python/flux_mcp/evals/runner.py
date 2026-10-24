@@ -113,7 +113,9 @@ class _LLM:
         if client is None:
             import anthropic  # optional dependency: pip install 'flux-ai[mcp-evals]'
 
-            client = anthropic.AsyncAnthropic()
+            # Organisation-level keys must name the workspace to bill
+            ws = os.environ.get("ANTHROPIC_WORKSPACE_ID")
+            client = anthropic.AsyncAnthropic(default_headers={"anthropic-workspace-id": ws} if ws else None)
         self.client = client
         self.model = model
 

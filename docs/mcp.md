@@ -208,11 +208,15 @@ is skipped; keys are never stored.
 | Runner | Date | Result |
 |---|---|---|
 | scripted (reference sequences) | 2026-10-23, Mac Studio M1 Ultra, flux-engine Release, Test Synth | **22/22 (100 %)**, about 2 s for the suite |
-| LLM (`claude-opus-5-5`) | not run: no API key in this environment | n/a; the loop itself is covered by a test with a scripted fake client |
+| LLM (`claude-opus-5-5`, effort high) | 2026-10-24, same machine and engine | **22/22 (100 %)**, 1-6 tool calls per task, 3-25 s per task |
 
 The scripted pass rate shows every task is solvable with the tool set and that checkers and tools
-agree; it is not a model score. The P3 acceptance bar (≥ 80 % with a frontier model, against DAWZY's
-44 %) needs the LLM run: `python -m flux_mcp.evals --llm --json llm.json`.
+agree; it is not a model score. The LLM run is the model score: Claude drove the MCP tools from the
+task prompt alone and passed every task, above the P3 bar (≥ 80 %, against DAWZY's 44 %). The suite is
+small (22 tasks) and the checkers verify the project state, not musical quality.
+
+API keys that are not scoped to a workspace also need `ANTHROPIC_WORKSPACE_ID`; the runner sends it
+as the `anthropic-workspace-id` header.
 
 ## Tests
 
@@ -250,8 +254,6 @@ Engine tests skip with a reason when `flux-engine` or the Test Synth is not foun
 
 ## Deferred
 
-- LLM pass rate (needs an API key); run the suite and record it here.
-- Engine-side render progress (flux-engine reports none; flux-mcp sends a heartbeat).
 - Edit-in-place, delete and move of clips/tracks, automation, time-signature changes: not in the
   engine API yet (see its README). The tools say so, and `copy_clip` covers transposed variations.
 - `notifications/resources/updated` for `flux://project` after edits.

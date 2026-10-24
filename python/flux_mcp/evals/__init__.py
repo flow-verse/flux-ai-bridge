@@ -8,7 +8,8 @@ a reference tool-call sequence and a programmatic checker over the engine's
 - scripted (``run_scripted``): executes the reference sequence. Deterministic;
   runs in pytest and CI and proves every task is solvable with the tool set.
 - LLM (``run_llm``): a model drives the MCP tools from the prompt alone. Needs
-  ``ANTHROPIC_API_KEY`` (or another Anthropic credential); skipped otherwise.
+  ``ANTHROPIC_API_KEY`` (or another Anthropic credential); skipped otherwise. Keys that are
+  not scoped to a workspace also need ``ANTHROPIC_WORKSPACE_ID``.
 
 Usage: ``python -m flux_mcp.evals [--llm] [--model ID] [--task ID ...] [--json out.json]``
 """
