@@ -127,6 +127,16 @@ flux_host:
   # the timbre table's balance relative to the bass.
   gain_db:
     "Surge XT": {bass: 0.0, chords: -10.6, pad: -10.5, lead: -6.8}
+  # Drums as one Surge XT track per voice (preset, the note it is played at, and a gain measured so each
+  # voice's peak matches the built-in timbre table's level_db; 2026-10-25, 4 hits at velocity 110).
+  drum_presets:
+    "Surge XT":
+      kick:       {preset: "Surge XT Factory Presets/Kick 909ish", note: 48, gain_db: 3.0}
+      clap:       {preset: "Surge XT Third Party Presets/Clap - Noise Layer", note: 60, gain_db: -9.5}
+      hat_closed: {preset: "Surge XT Third Party Presets/Tasty Hats", note: 48, gain_db: -15.0}
+      hat_open:   {preset: "Surge XT Third Party Presets/DR hats open VA", note: 48, gain_db: -22.0}
+      perc:       {preset: "Surge XT Third Party Presets/Perc 1", note: 48, gain_db: -17.5}
+      ride:       {preset: "Surge XT Third Party Presets/DR T8 Cymbal", note: 48, gain_db: -22.0}
   # Post-render filters per layer (Hz): keep chords and lead out of the kick/bass register, tame bright patches.
   eq:
     "Surge XT": {chords: {highpass: 200, lowpass: 1800}, lead: {highpass: 200, lowpass: 5000}, pad: {highpass: 120, lowpass: 2500}}

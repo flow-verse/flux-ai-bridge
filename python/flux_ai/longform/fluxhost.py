@@ -19,10 +19,21 @@ rendered audio lines up with the plan's microsecond grid exactly as the built-in
 synth's does. Tempo-synced plugin features (LFO or delay sync) follow the
 constant tempo and drift slightly inside a ramp.
 
-Drums. Unless a drum instrument is configured (``--flux-plugin drums=ID`` or
-``flux_host.plugins.drums`` in the genre table), drums keep the built-in synth
-(with its drum reverb and the genre's texture) and are mixed with the engine
-stems. The built-in kick also drives the genre's sidechain ducking of the engine
+Drums. Three routes, in order of precedence:
+
+- ``--flux-plugin drums=ID`` (or ``flux_host.plugins.drums``): one drum
+  instrument track for the whole kit, the kick (GM note 36) on its own track so
+  the ``low`` stem can be formed;
+- ``flux_host.drum_presets.<plugin>`` in the genre table: one engine track per
+  drum voice (``drum:kick``, ``drum:clap`` ...), each with its own preset of the
+  default instrument, played at the table's ``note`` with the written velocity
+  and mixed at ``gain_db``; voices the table does not name stay on the
+  built-in synth;
+- otherwise the built-in synth (with its drum reverb and the genre's texture),
+  mixed with the engine stems.
+
+In every route the built-in synth still computes the kick-driven sidechain
+envelope from the written kick notes. The built-in kick also drives the genre's sidechain ducking of the engine
 layers, as it does in the built-in renderer. With a drum instrument the kick
 (GM note 36) gets its own track so the ``low`` stem (kick + bass) for bass-swap
 transitions can still be formed.
@@ -84,14 +95,16 @@ def parse_preset_specs(specs: list[str] | None) -> dict[str, str]:
     return parse_plugin_specs(specs, flag="--flux-preset", allow_default=False)
 
 
-def notes_to_clips(notes: list[render.ParsedNote], bpm: float, clip_beats: float, tracks: dict[str, str]
-                   ) -> tuple[dict[str, list[dict]], dict]:
+def notes_to_clips(notes: list[render.ParsedNote], bpm: float, clip_beats: float, tracks: dict[str, str],
+                   drum_notes: dict[str, int] | None = None) -> tuple[dict[str, list[dict]], dict]:
     """Convert parsed section notes (seconds) into `write_notes` note lists per engine track.
 
     `tracks` maps a MIDI track name (layer) to the engine track it goes to; layers
     not in it are skipped. Drums may be split: a `"kick"` entry receives GM note 36
-    and `"drums"` the rest. Times become beats at the constant `bpm`, rounded to
-    1/960 beat; every note keeps at least one tick and ends inside the clip.
+    and `"drums"` the rest; a `"drum:<voice>"` entry (voice as in render.DRUM_BY_NOTE)
+    receives that voice alone, played at `drum_notes[voice]` (default 60) instead of
+    the GM note. Times become beats at the constant `bpm`, rounded to 1/960 beat;
+    every note keeps at least one tick and ends inside the clip.
     """
     beat_per_s = bpm / 60.0
     clip_ticks = int(math.floor(clip_beats * TICKS + 1e-6))
@@ -99,13 +112,17 @@ def notes_to_clips(notes: list[render.ParsedNote], bpm: float, clip_beats: float
     stats = {"notes": 0, "microtonal_notes": 0, "clamped": 0}
     for nt in notes:
         layer = nt.track
-        if layer == "drums" and "kick" in tracks and int(round(nt.pitch)) == KICK_NOTE:
+        pitch = int(round(nt.pitch))
+        voice = render.DRUM_BY_NOTE.get(pitch) if layer == "drums" else None
+        if voice is not None and f"drum:{voice}" in tracks:
+            layer = f"drum:{voice}"
+            pitch = int((drum_notes or {}).get(voice, 60))
+        elif layer == "drums" and "kick" in tracks and pitch == KICK_NOTE:
             layer = "kick"
         dest = tracks.get(layer)
         if dest is None:
             continue
-        pitch = int(round(nt.pitch))
-        cents = int(round((nt.pitch - pitch) * 100))
+        cents = 0 if layer.startswith("drum:") else int(round((nt.pitch - pitch) * 100))
         if cents:
             stats["microtonal_notes"] += 1
         a = int(round(nt.start * beat_per_s * TICKS))
@@ -155,8 +172,13 @@ def split_microtones(clips: dict[str, list[dict]], bend_range: dict[str, float]
 
 
 def base_layer(track_name: str) -> str:
-    """Layer of an engine track (`"lead~-50c"` -> `"lead"`)."""
+    """Layer of an engine track (`"lead~-50c"` -> `"lead"`, `"drum:clap"` -> `"drum:clap"`)."""
     return track_name.split("~", 1)[0]
+
+
+def drum_voice(track_name: str) -> str | None:
+    """`"drum:clap"` -> `"clap"`; None for other tracks."""
+    return track_name[5:] if track_name.startswith("drum:") else None
 
 class FluxHostRenderer(render.Renderer):
     """Renders pitched layers with CLAP/VST3 instruments in flux-host's headless engine."""
@@ -278,6 +300,22 @@ class FluxHostRenderer(render.Renderer):
             out[layer] = float(per.get(layer, 2.0) if isinstance(per, dict) else (per or 2.0))
         return out
 
+    def drum_presets(self, genre: dict, plugin: dict | None) -> dict[str, dict]:
+        """Per-voice drum presets for the default instrument (genre flux_host.drum_presets per plugin
+        name: {voice: {preset, note?, gain_db?}}); empty when the table has none or a whole-kit drum
+        instrument is configured."""
+        if plugin is None or "drums" in self.plugins:
+            return {}
+        table = (genre.get("flux_host") or {}).get("drum_presets") or {}
+        per = table.get(plugin.get("name"))
+        out: dict[str, dict] = {}
+        if isinstance(per, dict):
+            for voice, spec in per.items():
+                if voice in render.DRUM_BY_NOTE.values() and isinstance(spec, dict) and spec.get("preset"):
+                    out[voice] = {"preset": str(spec["preset"]), "note": int(spec.get("note", 60)),
+                                  "gain_db": float(spec.get("gain_db", 0.0))}
+        return out
+
     def layer_eq(self, genre: dict, resolved: dict[str, dict | None]) -> dict[str, dict]:
         """Post-render filters per layer for its instrument (genre flux_host.eq per plugin name:
         {layer: {highpass: Hz, lowpass: Hz}}); empty when the table has none."""
@@ -323,6 +361,8 @@ class FluxHostRenderer(render.Renderer):
         specs = self.layer_specs(genre)
         resolved = {layer: (self.resolve(spec) if spec else None) for layer, spec in specs.items()}
         drums_builtin = resolved["drums"] is None
+        default_plugin = self.resolve(self.default_spec(genre))
+        voices = self.drum_presets(genre, default_plugin) if drums_builtin else {}
         notes, body_s = render.parse_midi(Path(section_midi))
         # the built-in synth renders the drums (or nothing) and provides the kick sidechain envelope
         base = self.drum_synth.synthesize(notes, body_s, section_plan, tracks={"drums"})
@@ -330,15 +370,24 @@ class FluxHostRenderer(render.Renderer):
         if not drums_builtin:
             base.low[:] = 0
             base.high[:] = 0
+        elif voices:
+            # voices with a preset leave the built-in synth; the others are re-synthesized alone
+            rest = [x for x in notes if x.track == "drums" and render.DRUM_BY_NOTE.get(int(round(x.pitch))) not in voices]
+            base.low[:] = 0
+            base.high[:] = 0
+            if rest:
+                part = self.drum_synth.synthesize(rest, body_s, section_plan, tracks={"drums"})
+                base.low[:] = part.low
+                base.high[:] = part.high
         bpm = float(section_plan["bpm"])
         clip_beats = n / sr * bpm / 60.0
         clip_bars = int(math.ceil(clip_beats / 4 - 1e-9))
         routing = {layer: layer for layer in PITCHED}
         if not drums_builtin:
             routing.update({"drums": "drums", "kick": "kick"})
-        clips, conv = notes_to_clips(notes, bpm, clip_bars * 4, routing)
+        routing.update({f"drum:{v}": f"drum:{v}" for v in voices})
+        clips, conv = notes_to_clips(notes, bpm, clip_bars * 4, routing, {v: spec["note"] for v, spec in voices.items()})
         clips = {name: ns for name, ns in clips.items() if ns}
-        plugin_of = {name: resolved["drums" if name == "kick" else name] for name in clips}
         layer_preset = self.layer_presets(genre, resolved)
         shift = self.layer_transpose(genre, resolved)
         for name, ns in clips.items():
@@ -347,9 +396,22 @@ class FluxHostRenderer(render.Renderer):
                 for note in ns:
                     note["pitch"] = min(127, max(0, int(note["pitch"]) + k))
         bend_range = self.layer_bend_range(genre, resolved)
-        clips, events, micro = split_microtones(clips, {**bend_range, "kick": bend_range["drums"]})
-        plugin_of = {name: resolved["drums" if base_layer(name) == "kick" else base_layer(name)] for name in clips}
-        preset_of = {name: layer_preset["drums" if base_layer(name) == "kick" else base_layer(name)] for name in clips}
+        clips, events, micro = split_microtones(clips, {**bend_range, "kick": bend_range["drums"],
+                                                        **{f"drum:{v}": 2.0 for v in voices}})
+
+        def plugin_for(track: str) -> dict:
+            if drum_voice(track) is not None:
+                return default_plugin
+            return resolved["drums" if base_layer(track) == "kick" else base_layer(track)]
+
+        def preset_for(track: str) -> str | None:
+            v = drum_voice(track)
+            if v is not None:
+                return voices[v]["preset"]
+            return layer_preset["drums" if base_layer(track) == "kick" else base_layer(track)]
+
+        plugin_of = {name: plugin_for(name) for name in clips}
+        preset_of = {name: preset_for(name) for name in clips}
 
         last: Exception | None = None
         for attempt in range(2):
@@ -370,7 +432,10 @@ class FluxHostRenderer(render.Renderer):
         duck = base.duck[:, None]
         for track, x in stems.items():
             name = base_layer(track)
-            if name in ("kick", "drums"):
+            v = drum_voice(track)
+            if v is not None:
+                (low if v == "kick" else high)[:] += x * (level.get("drums", 1.0) * synth.db(voices[v]["gain_db"]))
+            elif name in ("kick", "drums"):
                 (low if name == "kick" else high)[:] += x * level.get("drums", 1.0)
             else:
                 f = eq.get(name)
@@ -387,6 +452,7 @@ class FluxHostRenderer(render.Renderer):
         stats = {"notes": len(notes), "tail_seconds": base.tail,
                  "plugins": {layer: (r or "builtin-synth") for layer, r in resolved.items()
                              if layer in layers_used or (layer == "drums" and drums_builtin)},
+                 "drum_presets": {v: spec for v, spec in voices.items() if f"drum:{v}" in clips},
                  "presets": {layer: p for layer, p in layer_preset.items() if p and layer in layers_used},
                  "transpose": {layer: k for layer, k in shift.items() if k and layer in layers_used},
                  "eq": {layer: f for layer, f in eq.items() if layer in layers_used},

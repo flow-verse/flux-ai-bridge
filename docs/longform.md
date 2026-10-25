@@ -201,7 +201,12 @@ table's `level_db` relative to the bass. This keeps the table's balance between
 layers and lets the plugin's own output set the absolute level. No shipped
 genre table has a `flux_host` block yet.
 
-**Drums.** Unless a drum instrument is configured (`--flux-plugin drums=ID` or
+**Drums.** With `flux_host.drum_presets` in the genre table (deep house and
+maqam groove have one, measured 2026-10-25), every listed drum voice gets its
+own engine track with its own preset of the default instrument (Surge XT's
+factory and third-party percussion patches: a 909-style kick, a noise-layer
+clap, hats, a cymbal; a membranophone model for doum and tek). Unless a drum
+instrument is configured (`--flux-plugin drums=ID` or
 `flux_host.plugins.drums`), drums stay on the built-in synth (with its drum
 reverb and the genre's texture, e.g. lo-fi vinyl) and are mixed with the engine
 stems. The built-in kick also drives the genre's sidechain ducking of the
@@ -373,6 +378,7 @@ the review's verdicts are next to them. Table keys that came out of it:
 | `lead.rest_below_energy` | below this energy the lead rests every other phrase (default 0.75) |
 | `lead.ornament_prob` | chance of a neighbour-note grace per phrase (default 0.3) |
 | `lead.start_degrees` | degrees a motif may start on (default `[0, 2, 4]`) |
+| `flux_host.drum_presets.<plugin>.<voice>` | `{preset, note, gain_db}`: that drum voice on its own engine track with this preset of the default instrument, played at `note`; voices not listed stay on the built-in synth |
 
 Round 2 (2026-10-25, two independent listeners on the v2 renders) added the
 groove keys above, kept kick and bass playing through an incoming overlap, let

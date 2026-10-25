@@ -222,3 +222,22 @@ def test_build_section_carries_a_riser_in_the_builtin_synth(tmp_path: Path):
     e_first, e_last = np.mean(riser.high[: b // 4] ** 2), np.mean(riser.high[3 * b // 4: b] ** 2)
     assert e_last > 20 * e_first > 0
 
+
+def test_drum_voices_route_to_their_own_engine_tracks():
+    from flux_ai.longform import fluxhost
+
+    notes = [render.ParsedNote("drums", 9, 0.0, 0.1, 36, 0.9, 0.5), render.ParsedNote("drums", 9, 0.5, 0.6, 39, 0.8, 0.5),
+             render.ParsedNote("drums", 9, 0.25, 0.3, 42, 0.5, 0.5), render.ParsedNote("bass", 0, 0.0, 0.5, 45.5, 0.7, 0.5)]
+    routing = {"bass": "bass", "drum:kick": "drum:kick", "drum:clap": "drum:clap"}
+    clips, stats = fluxhost.notes_to_clips(notes, 120.0, 4.0, routing, {"kick": 48, "clap": 60})
+    assert [n["pitch"] for n in clips["drum:kick"]] == [48] and clips["drum:kick"][0]["velocity"] == 114
+    assert [n["pitch"] for n in clips["drum:clap"]] == [60] and clips["drum:clap"][0]["cents"] == 0
+    assert "drum:hat_closed" not in clips and stats["notes"] == 3  # the hat stays on the built-in synth
+    assert abs(clips["bass"][0]["cents"]) == 50  # 45.5 rounds to 46 with -50 cents
+    r = fluxhost.FluxHostRenderer(engine="/nonexistent")
+    voices = r.drum_presets(genres.load("deep house"), {"name": "Surge XT"})
+    assert voices["kick"]["note"] == 48 and voices["clap"]["preset"].endswith("Clap - Noise Layer")
+    assert r.drum_presets(genres.load("techno"), {"name": "Surge XT"}) == {}
+    r.plugins["drums"] = "Some Kit"
+    assert r.drum_presets(genres.load("deep house"), {"name": "Surge XT"}) == {}
+

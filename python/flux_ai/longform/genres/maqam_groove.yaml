@@ -121,6 +121,15 @@ flux_host:
   # the timbre table's balance relative to the bass.
   gain_db:
     "Surge XT": {bass: -10.0, chords: -12.2, pad: -12.1, lead: -11.2}   # bass well under the drone and lead (review: Pianobass 6-8 dB too loud)
+  # Drums as one Surge XT track per voice: a membranophone model for doum (kick) and tek (clap), a shaker
+  # for the riq jingles, a soft skin tap for ka (perc); gains measured against the timbre table (2026-10-25).
+  drum_presets:
+    "Surge XT":
+      kick:       {preset: "Surge XT Third Party Presets/Membranophone Dum-Tek", note: 48, gain_db: 4.0}
+      clap:       {preset: "Surge XT Third Party Presets/Membranophone Dum-Tek", note: 60, gain_db: 4.0}
+      hat_closed: {preset: "Surge XT Third Party Presets/Simple Shaker", note: 48, gain_db: -12.5}
+      hat_open:   {preset: "Surge XT Third Party Presets/DRUM - Open Hihat", note: 48, gain_db: -6.5}
+      perc:       {preset: "Surge XT Third Party Presets/Membranophone 2", note: 60, gain_db: -7.5}
   # Post-render filters per layer (Hz).
   eq:
     "Surge XT": {lead: {lowpass: 4500}, chords: {highpass: 100, lowpass: 2500}, bass: {lowpass: 400}}
