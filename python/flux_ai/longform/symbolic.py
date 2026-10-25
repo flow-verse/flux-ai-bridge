@@ -123,6 +123,19 @@ def _fold(p: float, lo: float, hi: float) -> float:
     return p
 
 
+def brightness_curve(section: dict) -> list[float]:
+    """Per-bar brightness 0..1: the bar energy plus a slow sinusoidal drift seeded by the section
+    (CC74 in the MIDI; the flux-host renderer turns it into filter-cutoff automation)."""
+    bp = section["bar_plan"]
+    drift = random.Random(section["seeds"]["section"])
+    period, phase = drift.uniform(6, 14), drift.uniform(0, 2 * math.pi)
+    out = []
+    for b in range(section["bars"]):
+        val = 0.2 + 0.65 * bp[b]["energy"] + 0.12 * math.sin(2 * math.pi * b / period + phase)
+        out.append(min(1.0, max(0.0, val)))
+    return out
+
+
 def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
     s = plan["sections"][index]
     g = genres.load(s.get("genre", plan["genre"]))
@@ -356,11 +369,8 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
                 notes.append(Note("lead", tick, max(STEP // 2, dur), pitch, min(1.0, vel * (0.75 + 0.25 * e))))
 
     # ---- brightness automation: energy plus slow drift (never the same twice)
-    drift = random.Random(seeds["section"])
-    period, phase = drift.uniform(6, 14), drift.uniform(0, 2 * math.pi)
-    for b in range(bars):
-        val = 0.2 + 0.65 * bp[b]["energy"] + 0.12 * math.sin(2 * math.pi * b / period + phase)
-        cc.append((b * BAR, "all", int(round(min(1.0, max(0.0, val)) * 127))))
+    for b, val in enumerate(brightness_curve(s)):
+        cc.append((b * BAR, "all", int(round(val * 127))))
 
     notes.sort(key=lambda n: (n.start, n.track, n.pitch))
     return notes, {"cc": cc, "bars": bars}

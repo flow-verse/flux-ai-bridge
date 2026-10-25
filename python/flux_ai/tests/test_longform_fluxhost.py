@@ -301,3 +301,186 @@ def test_flux_host_restarts_a_crashed_engine(flux_run, tmp_path):
         assert res.frames > res.body_frames and (tmp_path / "a" / "mix.low.flac").is_file()
     finally:
         r.close()
+
+
+# ---------------------------------------------------------------- Surge XT tuning and FX helpers
+
+def test_scala_slots_scl_kbm_and_pitch_mapping(tmp_path):
+    from flux_ai.longform import surge_tuning as st
+
+    bayati = [0, 150, 300, 500, 700, 800, 1000]
+    slots = st.scale_slots(bayati)
+    assert slots[2] == 150.0 and slots[1] == 100.0 and slots[3] == 300.0 and len(slots) == 12
+    # written pitches (D4 tonic = 62) land on the chromatic slot that is retuned to them
+    assert [st.pitch_to_slot_note(p, 62, slots) for p in (62, 63.5, 65, 67, 74, 75.5, 61, 51.5)] == [62, 64, 65, 67, 74, 76, 61, 52]
+    scl = st.scl_text(slots, "flux D bayati")
+    lines = [l for l in scl.splitlines() if l and not l.startswith("!")]
+    assert lines[0] == "flux D bayati" and lines[1].strip() == "12" and lines[3].strip() == "150.00000" and lines[-1].strip() == "1200.00000"
+    kbm = st.kbm_text(62, 293.6648)
+    vals = [l for l in kbm.splitlines() if l and not l.startswith("!")]
+    assert vals[:6] == ["12", "0", "127", "62", "62", "293.664800"] and vals[6] == "12" and vals[7:] == [str(i) for i in range(12)]
+    with pytest.raises(ValueError):
+        st.scale_slots([0, 150, 160])  # two degrees on one chromatic slot
+    assert abs(st.fx_type_value("Reverb 1") - 2 / 29) < 1e-9 and st.fx_type_value("off") == 0.0
+    with pytest.raises(KeyError):
+        st.fx_type_value("Plate")
+    # user default file: enable writes both keys and keeps other entries
+    p = tmp_path / "SurgeXTUserDefaults.xml"
+    p.write_text('<?xml version = "1.0" encoding = "UTF-8" ?>\n<defaults version="1">\n  <default key="other" value="x" type="1"/>\n</defaults>\n')
+    assert not st.patch_tuning_enabled(p)
+    st.enable_patch_tuning(p)
+    assert st.patch_tuning_enabled(p) and 'key="other"' in p.read_text()
+
+
+def test_tuned_patch_rewrites_a_surge_fxp(tmp_path):
+    import struct
+    from xml.etree import ElementTree as ET
+
+    from flux_ai.longform import surge_tuning as st
+
+    src = st.find_preset_file("Surge XT Factory Presets/Organ 1")
+    if src is None:
+        pytest.skip("Surge XT factory patches not installed")
+    assert st.find_preset_file("Surge XT Factory Presets/Pianobass").name == "Piano Bass.fxp"  # catalogue name vs file name
+    out = st.tuned_patch(src, tmp_path / "t.fxp", st.scl_text(st.scale_slots([0, 150, 300, 500, 700, 800, 1000]), "t"),
+                         st.kbm_text(62, 293.66), "flux D bayati")
+    raw = out.read_bytes()
+    assert raw[:4] == b"CcnK" and raw[60:64] == b"sub3"
+    xml_size = struct.unpack("<I", raw[64:68])[0]
+    chunk_size = struct.unpack(">i", raw[56:60])[0]
+    assert 60 + chunk_size == len(raw) and 92 + xml_size <= len(raw)
+    root = ET.fromstring(st.patch_xml(out))
+    pt = root.find("patchTuning")
+    assert pt is not None and pt.get("mname") == "flux D bayati"
+    import base64
+    assert base64.b64decode(pt.get("v")).decode().splitlines()[2] == "t"
+    # a second embedding replaces the first
+    out2 = st.tuned_patch(out, tmp_path / "t2.fxp", "! x\nx\n 12\n!\n 100.0\n 200.0\n 300.0\n 400.0\n 500.0\n 600.0\n 700.0\n 800.0\n 900.0\n 1000.0\n 1100.0\n 1200.0\n")
+    assert st.patch_xml(out2).count(b"<patchTuning") == 1
+
+
+def test_renderer_tuning_mode_fx_table_and_pitch_map(monkeypatch):
+    from flux_ai.longform import fluxhost, genres
+    from flux_ai.longform import surge_tuning as st
+
+    r = fluxhost.FluxHostRenderer(engine="/nonexistent")
+    assert r.tuning_mode(genres.load("maqam")) == "scala" and r.tuning_mode(genres.load("deep house")) == "bend"
+    surge = {"name": "Surge XT"}
+    fx = r.layer_fx(genres.load("deep house"), {"pad": surge, "chords": surge, "lead": surge, "bass": surge, "drums": None})
+    assert fx["pad"] == [{"slot": "G1", "type": "Reverb 1", "params": {}}] and "lead" not in fx
+    slots = st.scale_slots([0, 150, 300, 500, 700, 800, 1000])
+    notes = [ParsedNote("lead", 1, 0.0, 0.5, 63.5, 0.8, 0.5), ParsedNote("lead", 1, 0.5, 1.0, 62.0, 0.8, 0.5),
+             ParsedNote("drums", 9, 0.0, 0.1, 36, 0.9, 0.5)]
+    clips, _ = fluxhost.notes_to_clips(notes, 120.0, 4.0, {"lead": "lead", "drums": "drums"}, None,
+                                       lambda p: st.pitch_to_slot_note(p, 62, slots))
+    assert [n["pitch"] for n in clips["lead"]] == [64, 62] and all(n["cents"] == 0 for n in clips["lead"])
+    assert clips["drums"][0]["pitch"] == 36
+
+
+def _engine_and_surge():
+    """(engine path, Surge XT plugin id) or None when either is missing."""
+    eng = os.environ.get("FLUX_ENGINE") or shutil.which("flux-engine")
+    if not eng or not Path(eng).exists():
+        return None
+    from flux_ai.longform.fluxhost import FluxHostRenderer
+
+    r = FluxHostRenderer(engine=eng)
+    try:
+        surge = next((p for p in r.catalog() if p.get("name") == "Surge XT"), None)
+    except Exception:
+        surge = None
+    finally:
+        r.close()
+    return (eng, surge["id"]) if surge else None
+
+
+def test_embedded_scale_retunes_surge_note(tmp_path):
+    """A patch with an embedded bayati scale plays MIDI 64 (E4) at E half-flat, 150 cents above D4."""
+    es = _engine_and_surge()
+    if es is None:
+        pytest.skip("flux-engine or Surge XT not found")
+    from flux_ai.longform import surge_tuning as st
+    from flux_ai import engine_client
+
+    if not st.patch_tuning_enabled():
+        pytest.skip("Surge XT user default overrideTuningOnPatchLoad is off")
+    src = st.find_preset_file("Surge XT Factory Presets/Init Saw") or st.find_preset_file("Surge XT Factory Presets/Init Sine")
+    if src is None:
+        pytest.skip("no Surge init patch found")
+    eng, surge = es
+    slots = st.scale_slots([0, 150, 300, 500, 700, 800, 1000])
+    tuned = st.tuned_patch(src, tmp_path / "bayati.fxp", st.scl_text(slots, "flux D bayati"), st.kbm_text(62, 293.6648), "flux D bayati")
+    c = engine_client.EngineClient(eng, ["--sr", "48000"])
+    try:
+        c.call("create_project", {"dir": str(tmp_path / "proj"), "bpm": 120}, 60)
+        t = c.call("add_track", {"type": "instrument", "name": "s", "plugin_id": surge}, 60)
+        got = c.call("load_preset", {"plugin": t["plugin"]["id"], "preset": str(tuned)}, 60)["preset"]
+        assert got.get("source") == "file"
+        hz = {}
+        for note in (62, 64, 65):
+            c.call("write_notes", {"track": t["track"], "start_bar": 1, "length_bars": 1,
+                                   "notes": [{"pitch": note, "start_beat": 0, "length_beats": 2, "velocity": 100}]}, 60)
+            c.call("set_range", {"start_bar": 1, "end_bar": 2}, 60)
+            out = tmp_path / f"n{note}.wav"
+            c.call("render", {"out": str(out), "start_bar": 1, "end_bar": 2, "bits": "32f"}, 300)
+            x, sr = sf.read(str(out), dtype="float32", always_2d=True)
+            x = x[int(0.2 * sr):int(0.9 * sr)].mean(1)
+            spec = np.abs(np.fft.rfft(x * np.hanning(len(x)), n=1 << 18))
+            f = np.fft.rfftfreq(1 << 18, 1 / sr)
+            band = (f > 200) & (f < 450)
+            hz[note] = float(f[band][np.argmax(spec[band])])
+    finally:
+        c.close()
+    cents = {n: 1200 * np.log2(hz[n] / 293.6648) for n in hz}
+    assert abs(cents[62]) < 8, cents
+    assert abs(cents[64] - 150) < 8, cents  # the retuned E: a quarter tone below E natural (200)
+    assert abs(cents[65] - 300) < 8, cents
+
+
+def test_brightness_curve_and_automation_table():
+    from flux_ai.longform import fluxhost, genres
+
+    p = planner.plan("deep house", 0.1666667, seed=1).data
+    sec = next(s for s in p["sections"] if s["type"] == "peak")
+    curve = symbolic.brightness_curve(sec)
+    assert len(curve) == sec["bars"] and all(0.0 <= v <= 1.0 for v in curve)
+    assert max(curve) - min(curve) > 0.05  # the drift and the energy slope move it
+    notes, extra = symbolic.generate_notes(p, p["sections"].index(sec))
+    assert [v for _, _, v in extra["cc"]] == [int(round(v * 127)) for v in curve]
+    r = fluxhost.FluxHostRenderer(engine="/nonexistent")
+    surge = {"name": "Surge XT"}
+    auto = r.layer_automation(genres.load("deep house"), {"pad": surge, "chords": surge, "lead": surge, "bass": surge, "drums": None})
+    assert auto["pad"] == [{"param": "A Filter 1 Cutoff", "depth": 0.12}] and "lead" not in auto
+
+
+def test_automation_reaches_the_engine_when_a_table_names_the_plugin(tmp_path, monkeypatch):
+    """With the Test Synth standing in for Surge XT, the renderer writes one automation clip per swept layer."""
+    es = os.environ.get("FLUX_ENGINE") or shutil.which("flux-engine")
+    if not es or not Path(es).exists():
+        pytest.skip("flux-engine not found")
+    from flux_ai.longform import fluxhost, genres
+
+    r = fluxhost.FluxHostRenderer(engine=es, plugins={"default": "Test Synth"})
+    ok, why = r.available()
+    if not ok:
+        r.close()
+        pytest.skip(why)
+    try:
+        g = copy.deepcopy(genres.load("deep house"))
+        g["flux_host"]["automation"] = {"Test Synth": {"pad": [{"param": "Gain", "depth": 0.3}]}}  # Gain sits mid-range; Level starts at its maximum
+        g["flux_host"]["presets"] = {}
+        g["flux_host"]["drum_presets"] = {}
+        g["flux_host"]["fx"] = {}
+        g["flux_host"]["eq"] = {}
+        monkeypatch.setattr(genres, "load", lambda name, _g=g: _g)
+        p = planner.plan("deep house", 0.02, seed=1).data
+        i = next(k for k, s in enumerate(p["sections"]) if "pad" in s["layers"])
+        midi = tmp_path / "s.mid"
+        symbolic.write_midi(p, i, midi)
+        res = r.render(midi, p["sections"][i], tmp_path / "out" / "mix.flac")
+        auto = res.stats["engine"]["automation"]
+        assert "pad" in auto and auto["pad"][0]["param"] == "Gain" and auto["pad"][0]["max"] > auto["pad"][0]["min"]
+        assert res.stats["automation"] == {"pad": ["Gain"]}
+    finally:
+        r.close()
+

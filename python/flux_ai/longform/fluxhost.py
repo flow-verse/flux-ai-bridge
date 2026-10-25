@@ -44,6 +44,27 @@ Butterworth), applied to the engine stem before the gain and the sidechain duck:
 a high-pass keeps chords and leads out of the kick and bass register, a low-pass
 tames a bright patch. Plugins expose no such control through the engine API.
 
+Tuning. ``flux_host.tuning: scala`` (maqam groove) embeds the section's scale in
+a copy of every pitched layer's patch (`surge_tuning.tuned_patch`, loaded with
+``load_preset`` by file path) and writes plain MIDI notes mapped onto the
+retuned chromatic slots, so quarter tones need no pitch bend and no extra
+tracks. Surge XT applies a patch's tuning only when its user default
+``overrideTuningOnPatchLoad`` is on (``python -m flux_ai.longform.surge_tuning
+--enable`` writes it); the renderer refuses to render scala mode without it.
+The default mode, ``bend``, is the per-cent-offset track scheme below.
+
+Automation. ``flux_host.automation.<plugin>.<layer>`` lists plugin parameters to
+sweep with the section's brightness curve (`symbolic.brightness_curve`: bar
+energy plus a slow drift): ``{param: "A Filter 1 Cutoff", depth: 0.15}`` writes
+one automation clip per track (``write_automation``) whose points sit at every
+bar at ``base + depth * (brightness - 0.5) * 2``, ``base`` being the patch's
+own value after the preset loaded. So pads and chords open with the energy and
+breathe over 8-16 bars instead of sitting still.
+
+Effects. ``flux_host.fx.<plugin>.<layer>`` lists Surge FX slots to switch on
+after the preset loads (``{slot: G1, type: "Reverb 1", params: {...}}``), set
+through ``set_params`` on the instrument; see `surge_tuning.SURGE_FX_TYPES`.
+
 What the engine API cannot carry yet (rounded or dropped, counted in the section
 stats): pitch bend (maqam quarter tones are rounded to the nearest semitone),
 CC74 brightness automation, and presets (``load_preset`` does not exist, so a
@@ -64,7 +85,7 @@ from pathlib import Path
 import numpy as np
 
 from .. import engine_client
-from . import genres, render, synth
+from . import genres, render, surge_tuning, symbolic, synth, theory
 
 LAYERS = ("drums", "bass", "chords", "pad", "lead")
 PITCHED = ("bass", "chords", "pad", "lead")
@@ -96,7 +117,7 @@ def parse_preset_specs(specs: list[str] | None) -> dict[str, str]:
 
 
 def notes_to_clips(notes: list[render.ParsedNote], bpm: float, clip_beats: float, tracks: dict[str, str],
-                   drum_notes: dict[str, int] | None = None) -> tuple[dict[str, list[dict]], dict]:
+                   drum_notes: dict[str, int] | None = None, pitch_map=None) -> tuple[dict[str, list[dict]], dict]:
     """Convert parsed section notes (seconds) into `write_notes` note lists per engine track.
 
     `tracks` maps a MIDI track name (layer) to the engine track it goes to; layers
@@ -104,7 +125,8 @@ def notes_to_clips(notes: list[render.ParsedNote], bpm: float, clip_beats: float
     and `"drums"` the rest; a `"drum:<voice>"` entry (voice as in render.DRUM_BY_NOTE)
     receives that voice alone, played at `drum_notes[voice]` (default 60) instead of
     the GM note. Times become beats at the constant `bpm`, rounded to 1/960 beat;
-    every note keeps at least one tick and ends inside the clip.
+    every note keeps at least one tick and ends inside the clip. `pitch_map(float_pitch) -> int`
+    replaces the rounding of pitched notes (scala tuning: the retuned chromatic slot), with no cents.
     """
     beat_per_s = bpm / 60.0
     clip_ticks = int(math.floor(clip_beats * TICKS + 1e-6))
@@ -122,7 +144,11 @@ def notes_to_clips(notes: list[render.ParsedNote], bpm: float, clip_beats: float
         dest = tracks.get(layer)
         if dest is None:
             continue
-        cents = 0 if layer.startswith("drum:") else int(round((nt.pitch - pitch) * 100))
+        if pitch_map is not None and voice is None and layer != "drums":
+            pitch = int(pitch_map(nt.pitch))
+            cents = 0
+        else:
+            cents = 0 if layer.startswith("drum:") else int(round((nt.pitch - pitch) * 100))
         if cents:
             stats["microtonal_notes"] += 1
         a = int(round(nt.start * beat_per_s * TICKS))
@@ -316,6 +342,46 @@ class FluxHostRenderer(render.Renderer):
                                   "gain_db": float(spec.get("gain_db", 0.0))}
         return out
 
+    def tuning_mode(self, genre: dict) -> str:
+        """`bend` (default: one extra track per cent offset) or `scala` (scale embedded in the patches)."""
+        mode = str((genre.get("flux_host") or {}).get("tuning", "bend")).lower()
+        if mode not in ("bend", "scala"):
+            raise ValueError(f"flux_host.tuning must be 'bend' or 'scala', not {mode!r}")
+        return mode
+
+    def layer_fx(self, genre: dict, resolved: dict[str, dict | None]) -> dict[str, list[dict]]:
+        """FX slots to switch on per layer for its plugin (genre flux_host.fx per plugin name:
+        {layer: [{slot, type, params?}]})."""
+        table = (genre.get("flux_host") or {}).get("fx") or {}
+        out: dict[str, list[dict]] = {}
+        for layer, plugin in resolved.items():
+            per = table.get(plugin.get("name")) if plugin else None
+            specs = (per or {}).get(layer) if isinstance(per, dict) else None
+            if not specs:
+                continue
+            items = []
+            for sp in specs if isinstance(specs, list) else [specs]:
+                slot = str(sp.get("slot", "G1")).upper()
+                if slot not in surge_tuning.FX_SLOTS:
+                    raise ValueError(f"flux_host.fx: unknown FX slot {slot!r} for {layer}")
+                items.append({"slot": slot, "type": str(sp["type"]), "params": dict(sp.get("params") or {})})
+            out[layer] = items
+        return out
+
+    def layer_automation(self, genre: dict, resolved: dict[str, dict | None]) -> dict[str, list[dict]]:
+        """Parameters to sweep per layer for its plugin (genre flux_host.automation per plugin name:
+        {layer: [{param, depth}]}); depth is the +-swing in the parameter's normalised range."""
+        table = (genre.get("flux_host") or {}).get("automation") or {}
+        out: dict[str, list[dict]] = {}
+        for layer, plugin in resolved.items():
+            per = table.get(plugin.get("name")) if plugin else None
+            specs = (per or {}).get(layer) if isinstance(per, dict) else None
+            if not specs:
+                continue
+            out[layer] = [{"param": str(sp["param"]), "depth": float(sp.get("depth", 0.15))}
+                          for sp in (specs if isinstance(specs, list) else [specs])]
+        return out
+
     def layer_eq(self, genre: dict, resolved: dict[str, dict | None]) -> dict[str, dict]:
         """Post-render filters per layer for its instrument (genre flux_host.eq per plugin name:
         {layer: {highpass: Hz, lowpass: Hz}}); empty when the table has none."""
@@ -363,6 +429,22 @@ class FluxHostRenderer(render.Renderer):
         drums_builtin = resolved["drums"] is None
         default_plugin = self.resolve(self.default_spec(genre))
         voices = self.drum_presets(genre, default_plugin) if drums_builtin else {}
+        tuning = self.tuning_mode(genre)
+        pitch_map = None
+        scl = kbm = ""
+        tuned_presets: dict[str, str] = {}
+        if tuning == "scala":
+            if not surge_tuning.patch_tuning_enabled():
+                raise RuntimeError("flux_host.tuning is 'scala' but Surge XT's user default overrideTuningOnPatchLoad "
+                                   "is off; run `python -m flux_ai.longform.surge_tuning --enable` once "
+                                   f"(writes {surge_tuning.USER_DEFAULTS}) or set FLUX_SURGE_USER_DEFAULTS")
+            key = section_plan["key"]
+            cents = theory.scale_cents(key, genre.get("maqamat"))
+            slots = surge_tuning.scale_slots(cents)
+            tonic = theory.tonic_midi(key, 3)
+            scl = surge_tuning.scl_text(slots, f"flux {theory.key_str(key)}")
+            kbm = surge_tuning.kbm_text(tonic, 440.0 * 2 ** ((tonic - 69) / 12))
+            pitch_map = lambda p, t=tonic, s=slots: surge_tuning.pitch_to_slot_note(p, t, s)  # noqa: E731
         notes, body_s = render.parse_midi(Path(section_midi))
         # the built-in synth renders the drums (or nothing) and provides the kick sidechain envelope
         base = self.drum_synth.synthesize(notes, body_s, section_plan, tracks={"drums"})
@@ -386,7 +468,8 @@ class FluxHostRenderer(render.Renderer):
         if not drums_builtin:
             routing.update({"drums": "drums", "kick": "kick"})
         routing.update({f"drum:{v}": f"drum:{v}" for v in voices})
-        clips, conv = notes_to_clips(notes, bpm, clip_bars * 4, routing, {v: spec["note"] for v, spec in voices.items()})
+        clips, conv = notes_to_clips(notes, bpm, clip_bars * 4, routing, {v: spec["note"] for v, spec in voices.items()},
+                                     pitch_map)
         clips = {name: ns for name, ns in clips.items() if ns}
         layer_preset = self.layer_presets(genre, resolved)
         shift = self.layer_transpose(genre, resolved)
@@ -398,6 +481,17 @@ class FluxHostRenderer(render.Renderer):
         bend_range = self.layer_bend_range(genre, resolved)
         clips, events, micro = split_microtones(clips, {**bend_range, "kick": bend_range["drums"],
                                                         **{f"drum:{v}": 2.0 for v in voices}})
+        if tuning == "scala":
+            # every pitched layer plays a copy of its patch with the section's scale embedded
+            for layer in PITCHED:
+                if layer not in clips or not layer_preset.get(layer):
+                    continue
+                src = surge_tuning.find_preset_file(layer_preset[layer])
+                if src is None:
+                    raise RuntimeError(f"{section_plan['id']}: no .fxp file found for preset {layer_preset[layer]!r} "
+                                       f"(scala tuning needs the patch file)")
+                tuned_presets[layer] = str(surge_tuning.tuned_patch(
+                    src, out_wav.parent / "tuned" / f"{layer}.fxp", scl, kbm, f"flux {theory.key_str(section_plan['key'])}"))
 
         def plugin_for(track: str) -> dict:
             if drum_voice(track) is not None:
@@ -408,16 +502,22 @@ class FluxHostRenderer(render.Renderer):
             v = drum_voice(track)
             if v is not None:
                 return voices[v]["preset"]
-            return layer_preset["drums" if base_layer(track) == "kick" else base_layer(track)]
+            layer = "drums" if base_layer(track) == "kick" else base_layer(track)
+            return tuned_presets.get(layer) or layer_preset[layer]
 
         plugin_of = {name: plugin_for(name) for name in clips}
         preset_of = {name: preset_for(name) for name in clips}
+        fx_table = self.layer_fx(genre, resolved)
+        fx_of = {name: fx_table[base_layer(name)] for name in clips if base_layer(name) in fx_table}
+        auto_table = self.layer_automation(genre, resolved)
+        auto_of = {name: auto_table[base_layer(name)] for name in clips if base_layer(name) in auto_table}
+        curve = symbolic.brightness_curve(section_plan) if auto_of else []
 
         last: Exception | None = None
         for attempt in range(2):
             try:
                 eng = self._render_engine(section_plan["id"], out_wav.parent, bpm, clip_bars, n, clips, plugin_of,
-                                          preset_of, events)
+                                          preset_of, events, fx_of, auto_of, curve)
                 break
             except engine_client.EngineCrashed as e:  # restarted on the next call; redo the section from scratch
                 last = e
@@ -453,12 +553,17 @@ class FluxHostRenderer(render.Renderer):
                  "plugins": {layer: (r or "builtin-synth") for layer, r in resolved.items()
                              if layer in layers_used or (layer == "drums" and drums_builtin)},
                  "drum_presets": {v: spec for v, spec in voices.items() if f"drum:{v}" in clips},
+                 "tuning": {"mode": tuning, **({"scl": scl, "tuned_layers": sorted(tuned_presets)} if tuning == "scala" else {})},
+                 "fx": fx_of,
+                 "automation": {t: [sp["param"] for sp in specs] for t, specs in auto_of.items()},
                  "presets": {layer: p for layer, p in layer_preset.items() if p and layer in layers_used},
                  "transpose": {layer: k for layer, k in shift.items() if k and layer in layers_used},
                  "eq": {layer: f for layer, f in eq.items() if layer in layers_used},
                  "engine": info, "conversion": {**conv, **micro,
-                                                "pitch_bend": "microtones carried as a fixed pitch bend on one extra "
-                                                              "instrument track per cent offset",
+                                                "pitch_bend": ("scale embedded in each layer's patch; notes mapped onto its "
+                                                               "chromatic slots" if tuning == "scala" else
+                                                               "microtones carried as a fixed pitch bend on one extra "
+                                                               "instrument track per cent offset"),
                                                 "cc74_brightness": "not carried"}}
         return render.write_section(out_wav, low, high, sr, body, stats)
 
@@ -486,7 +591,10 @@ class FluxHostRenderer(render.Renderer):
     def _render_engine(self, sid: str, workdir: Path, bpm: float, clip_bars: int, frames: int,
                        clips: dict[str, list[dict]], plugin_of: dict[str, dict],
                        preset_of: dict[str, str | None] | None = None,
-                       events: dict[str, list[dict]] | None = None) -> tuple[dict[str, np.ndarray], dict]:
+                       events: dict[str, list[dict]] | None = None,
+                       fx_of: dict[str, list[dict]] | None = None,
+                       auto_of: dict[str, list[dict]] | None = None,
+                       curve: list[float] | None = None) -> tuple[dict[str, np.ndarray], dict]:
         import soundfile as sf
 
         sr = self.sample_rate
@@ -499,7 +607,9 @@ class FluxHostRenderer(render.Renderer):
         self._call("create_project", {"dir": str(proj), "bpm": bpm})
         turns = []
         track_ids: dict[str, str] = {}
+        plugin_ids: dict[str, str] = {}
         loaded: dict[str, dict] = {}
+        automated: dict[str, list[dict]] = {}
 
         def turn(label: str, body) -> None:
             self._call("begin_agent_turn", {"label": label})
@@ -521,10 +631,16 @@ class FluxHostRenderer(render.Renderer):
                 if st != "ok":
                     raise RuntimeError(f"{sid}: plugin {plugin_of[name]['name']} on track {name} has status {st}")
                 track_ids[name] = res["track"]
+                plugin_ids[name] = res["plugin"]["id"]
                 preset = (preset_of or {}).get(name)
                 if preset:
                     got = self._call("load_preset", {"plugin": res["plugin"]["id"], "preset": preset})["preset"]
-                    loaded[name] = {"requested": preset, "name": got.get("name"), "group": got.get("group")}
+                    loaded[name] = {"requested": preset, "name": got.get("name"), "group": got.get("group"),
+                                    **({"path": got["path"]} if got.get("path") else {})}
+                for fx in (fx_of or {}).get(name, []):
+                    values = [{"name": f"FX {fx['slot']} FX Type", "value": surge_tuning.fx_type_value(fx["type"])}]
+                    values += [{"name": k, "value": float(v)} for k, v in fx.get("params", {}).items()]
+                    self._call("set_params", {"plugin": res["plugin"]["id"], "values": values})
 
         def write() -> None:
             for name, notes in clips.items():
@@ -533,6 +649,22 @@ class FluxHostRenderer(render.Renderer):
                 if (events or {}).get(name):
                     req["events"] = events[name]
                 self._call("write_notes", req, 300.0)
+                specs = (auto_of or {}).get(name)
+                if specs and curve:
+                    params = {q["name"].lower(): q for q in self._call("list_params", {"plugin": plugin_ids[name]})["params"]}
+                    for sp in specs:
+                        q = params.get(sp["param"].lower())
+                        if q is None or not q.get("automatable", True):
+                            automated.setdefault(name, []).append({"param": sp["param"], "status": "not found"})
+                            continue
+                        base = float(q["value"])
+                        vals = [min(1.0, max(0.0, base + sp["depth"] * (c - 0.5) * 2.0)) for c in curve]
+                        points = [{"beat": b * 4.0, "value": round(v, 6)} for b, v in enumerate(vals)]
+                        points.append({"beat": clip_bars * 4.0, "value": round(vals[-1], 6)})
+                        self._call("write_automation", {"plugin": plugin_ids[name], "param": q["id"], "start_bar": 1,
+                                                        "length_bars": clip_bars, "points": points}, 300.0)
+                        automated.setdefault(name, []).append({"param": q["name"], "base": round(base, 4),
+                                                               "min": round(min(vals), 4), "max": round(max(vals), 4)})
             self._call("set_range", {"start_bar": 1, "end_bar": 1 + clip_bars})
 
         turn(f"longform {sid}: instruments", add_tracks)
@@ -563,7 +695,7 @@ class FluxHostRenderer(render.Renderer):
         shutil.rmtree(rdir, ignore_errors=True)
         info = {"api_version": (self.client._ready or {}).get("api_version"), "project": "project",
                 "turns": turns, "history": history, "tracks": {k: plugin_of[k]["id"] for k in track_ids},
-                "presets": loaded,
+                "presets": loaded, "automation": automated,
                 "build_seconds": round(build_s, 3), "render_wall_seconds": round(float(res.get("wall_sec", 0)), 3),
                 "render_speed_factor": res.get("speed_factor"), "engine_restarts": self.client.restarts,
                 "stem_rms_dbfs": {k: round(float(10 * np.log10(np.mean(np.square(v, dtype=np.float64)) + 1e-20)), 2)

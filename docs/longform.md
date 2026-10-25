@@ -379,6 +379,8 @@ the review's verdicts are next to them. Table keys that came out of it:
 | `lead.ornament_prob` | chance of a neighbour-note grace per phrase (default 0.3) |
 | `lead.start_degrees` | degrees a motif may start on (default `[0, 2, 4]`) |
 | `flux_host.drum_presets.<plugin>.<voice>` | `{preset, note, gain_db}`: that drum voice on its own engine track with this preset of the default instrument, played at `note`; voices not listed stay on the built-in synth |
+| `flux_host.tuning` | `bend` (default) or `scala`: how quarter tones reach the instrument (see below) |
+| `flux_host.fx.<plugin>.<layer>` | Surge FX slots to switch on after the preset loads |
 
 Round 2 (2026-10-25, two independent listeners on the v2 renders) added the
 groove keys above, kept kick and bass playing through an incoming overlap, let
@@ -390,6 +392,36 @@ Generator version 2 (staggered entries, drum hand-off in overlaps, pad tones
 from the table) changes every section hash, so old run directories re-render.
 The planner now gives each segment two themes from the motif library: the
 grooves and breakdowns play a B theme, the other sections the A theme.
+
+### Scala tuning, Surge FX slots and automation (2026-10-25)
+
+- **Tuning** (`flux_host.tuning: scala`, the maqam table's default now): every
+  pitched layer plays a copy of its patch with the section's scale embedded
+  (`surge_tuning.tuned_patch` writes a `patchTuning` element with a 12-note
+  SCL whose chromatic slots carry the maqam's cents, plus a KBM rooting the
+  scale on the tonic), loaded through `load_preset` by file path (flux-host
+  engine, 2026-10-25). Notes are plain MIDI mapped onto the retuned slots
+  (`pitch_to_slot_note`), so quarter tones need no pitch bend and no extra
+  tracks; a modulation gets its own tuned patches in its own section. Surge XT
+  applies a patch's tuning only when its user default
+  `overrideTuningOnPatchLoad` is on: `python -m flux_ai.longform.surge_tuning
+  --enable` writes `~/Documents/Surge XT/SurgeXTUserDefaults.xml` (set
+  `FLUX_SURGE_USER_DEFAULTS` for another location); the renderer refuses scala
+  mode without it. Measured: a tuned "Init Saw" plays MIDI 64 at 150 cents
+  above D4 (test `test_embedded_scale_retunes_surge_note`). `tuning: bend`
+  keeps the per-cent-offset track scheme below.
+- **FX** (`flux_host.fx.<plugin>.<layer>: [{slot, type, params?}]`): Surge FX
+  slots switched on after the preset loads, through `set_params` on the
+  instrument ("FX G1 FX Type" is a 0..1 float indexing Surge 1.3's 30 effect
+  types; `surge_tuning.fx_type_value` maps a name). Deep house puts Reverb 1
+  on the pad and a Delay on the organ, maqam Reverb 1 on the lead.
+- **Automation** (`flux_host.automation.<plugin>.<layer>: [{param, depth}]`):
+  flux-engine's `write_automation` (2026-10-25) carries one clip per swept
+  track, points at every bar at `base + depth * (brightness - 0.5) * 2`, the
+  brightness being the section's bar energy plus its slow drift
+  (`symbolic.brightness_curve`, the same curve the MIDI's CC74 follows) and
+  `base` the patch's own value after the preset loaded. Deep house sweeps the
+  pad's and organ's "A Filter 1 Cutoff", maqam the pad's.
 
 ### Maqam quarter tones through flux-host
 

@@ -137,6 +137,16 @@ flux_host:
       hat_open:   {preset: "Surge XT Third Party Presets/DR hats open VA", note: 48, gain_db: -22.0}
       perc:       {preset: "Surge XT Third Party Presets/Perc 1", note: 48, gain_db: -17.5}
       ride:       {preset: "Surge XT Third Party Presets/DR T8 Cymbal", note: 48, gain_db: -22.0}
+  # Filter sweeps from the section's brightness curve (energy plus slow drift), around the patch's own cutoff.
+  automation:
+    "Surge XT":
+      pad: [{param: "A Filter 1 Cutoff", depth: 0.12}]
+      chords: [{param: "A Filter 1 Cutoff", depth: 0.08}]
+  # Surge FX slots switched on after the preset loads: a room on the pad (measured: Reverb 1 adds a tail without
+  # raising the level; the Delay at its defaults made the organ 12 dB louder, so it is left out).
+  fx:
+    "Surge XT":
+      pad: [{slot: G1, type: "Reverb 1"}]
   # Post-render filters per layer (Hz): keep chords and lead out of the kick/bass register, tame bright patches.
   eq:
     "Surge XT": {chords: {highpass: 200, lowpass: 1800}, lead: {highpass: 200, lowpass: 5000}, pad: {highpass: 120, lowpass: 2500}}

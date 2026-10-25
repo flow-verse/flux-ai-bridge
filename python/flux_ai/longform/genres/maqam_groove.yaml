@@ -133,7 +133,17 @@ flux_host:
   # Post-render filters per layer (Hz).
   eq:
     "Surge XT": {lead: {lowpass: 4500}, chords: {highpass: 100, lowpass: 2500}, bass: {lowpass: 400}}
-  # Pitch-bend range in semitones (measured: bend 0.25 = +0.50 st on Pianobass, Organ 1 and East).
-  # Quarter tones are carried as a fixed bend on one extra instrument track per cent offset.
+  # Quarter tones: `scala` embeds the section's scale in a copy of every pitched layer's patch (Surge XT applies
+  # it with its user default overrideTuningOnPatchLoad on; `python -m flux_ai.longform.surge_tuning --enable`);
+  # `bend` instead carries each cent offset on its own extra track with a fixed pitch bend of bend_range.
+  tuning: scala
   bend_range:
     "Surge XT": 2
+  # Filter sweep on the pad from the section's brightness curve.
+  automation:
+    "Surge XT":
+      pad: [{param: "A Filter 1 Cutoff", depth: 0.1}]
+  # Surge FX slots switched on after the preset loads (global slots sit after the patch's own effects).
+  fx:
+    "Surge XT":
+      lead: [{slot: G1, type: "Reverb 1"}]
