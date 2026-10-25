@@ -18,7 +18,8 @@ aliases: [deep-house, deephouse, house]
 tuning: 12tet
 bpm: {min: 118, max: 125}
 bpm_step_max: 2.0          # largest tempo change between consecutive segments
-swing: 0.56                # 0.5 = straight sixteenths; 0.56 = light deep-house shuffle
+swing: 0.56                # 0.5 = straight sixteenths; 0.56 = light deep-house shuffle (odd sixteenths only)
+offbeat_push_ms: 12        # offbeat-eighth hats, percussion and ride land this late and softer: the laid-back pocket
 key_system: camelot
 keys:
   start: ["A minor", "F minor", "D minor", "G minor", "C minor", "E minor"]
@@ -35,7 +36,7 @@ segment:
 section_types:
   intro:     {energy: -0.20, mute: [lead, clap, perc]}
   groove:    {energy: -0.05, mute: [lead]}
-  build:     {energy: 0.05, mute: [], riser: true}
+  build:     {energy: 0.05, mute: [], riser: true, riser_db: -30}
   peak:      {energy: 0.15, mute: []}
   breakdown: {energy: -0.20, mute: [kick, bass, hat_closed, clap], add: [pad, lead]}
   outro:     {energy: -0.20, mute: [lead, chords, pad]}   # nothing pitched but bass under the incoming key
@@ -70,6 +71,8 @@ bass:
     syncop:    "R..R..R.5..R..8."
     walking:   "R-.5..8.R-.3..5."
     sustained: "R-------.R--5---"
+pad:
+  octave: 3                    # an octave under the chords (review: the pad sat too high and bright)
 chords:
   octave: 4
   tones: [0, 2, 4, 6]          # scale steps above the chord root (seventh chords)
@@ -95,7 +98,7 @@ transforms: [identity, up2, down3, invert, retrograde, shift]
 no_repeat: {form: 1, drums: 2, bass: 2, progression: 4, chord_rhythm: 1, motif: 5}
 timbre:
   kick:       {freq: 50, tune_to_key: true, pitch_amount: 3.0, pitch_decay: 0.04, decay: 0.38, click: 0.5, level_db: -4}   # tune_to_key: fundamental on the section tonic nearest 50 Hz (A1 = 55, B1 = 61.7)
-  clap:       {decay: 0.18, tone: 1500, level_db: -14}
+  clap:       {decay: 0.09, tone: 1800, level_db: -17}   # shorter, quieter: the long noise burst was the weakest sound in review
   hat_closed: {decay: 0.045, tone: 8000, level_db: -20}
   hat_open:   {decay: 0.22, tone: 7500, level_db: -22}
   perc:       {kind: rim, freq: 900, decay: 0.05, level_db: -20}
@@ -123,7 +126,7 @@ flux_host:
   # Measured patch levels (flux-engine, test phrase per layer, after transpose) offset so the mix keeps
   # the timbre table's balance relative to the bass.
   gain_db:
-    "Surge XT": {bass: 0.0, chords: -10.6, pad: -5.5, lead: -6.8}
+    "Surge XT": {bass: 0.0, chords: -10.6, pad: -10.5, lead: -6.8}
   # Post-render filters per layer (Hz): keep chords and lead out of the kick/bass register, tame bright patches.
   eq:
-    "Surge XT": {chords: {highpass: 200, lowpass: 1800}, lead: {highpass: 200, lowpass: 5000}, pad: {highpass: 120}}
+    "Surge XT": {chords: {highpass: 200, lowpass: 1800}, lead: {highpass: 200, lowpass: 5000}, pad: {highpass: 120, lowpass: 2500}}

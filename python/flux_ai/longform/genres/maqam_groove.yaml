@@ -38,12 +38,12 @@ segment:
   target_minutes: 5.0
   forms:
     taqsim_groove: [[intro, 8], [groove, 32], [build, 8], [peak, 32], [breakdown, 16], [peak, 24], [outro, 8]]
-    dance:         [[intro, 8], [groove, 24], [peak, 32], [breakdown, 8], [build, 8], [peak, 24], [outro, 8]]
+    dance:         [[intro, 8], [groove, 24], [peak, 32], [breakdown, 4], [build, 4], [peak, 24], [outro, 8]]
   transition: {type: blend, bars: 8, eq: true, bass_swap: true, swap_at: 0.0}
 section_types:
   intro:     {energy: -0.25, mute: [kick, clap, bass, hat_closed]}
   groove:    {energy: 0.0, mute: []}
-  build:     {energy: 0.05, mute: [], riser: true, riser_db: -30}
+  build:     {energy: 0.05, mute: []}   # no noise riser: tension comes from the fill and the melody
   peak:      {energy: 0.15, mute: []}
   breakdown: {energy: -0.30, mute: [kick, bass], add: [pad]}
   outro:     {energy: -0.25, mute: [lead, hat_closed]}
@@ -53,10 +53,11 @@ layers: {kick: 0.0, clap: 0.0, hat_closed: 0.3, hat_open: 0.6, perc: 0.4, ride: 
 drums:
   patterns:
     maqsum:   {kick: "x.......x.......", clap: "..x...x.....x...", hat_closed: "x.x.x.x.x.x.x.x.", hat_open: "............x...", perc: "..o.o..o..o.o.o.", ride: ""}
+  # fills are syncopated darbuka-style figures, not straight sixteenth rolls
     baladi:   {kick: "x..x....x.......", clap: "......x.....x...", hat_closed: "x.x.x.x.x.x.x.x.", hat_open: "......x.........", perc: "..o.o.....o.o.o.", ride: ""}
     saidi:    {kick: "x.....x.x.......", clap: "..x.........x...", hat_closed: "xoxoxoxoxoxoxoxo", hat_open: "", perc: "....o.o.....o.o.", ride: ""}
     malfuf:   {kick: "x.....x.........", clap: "....x.......x...", hat_closed: "x.x.x.x.x.x.x.x.", hat_open: "", perc: "..o.....o.o...o.", ride: ""}
-  fill: {clap: "x.x.x.x.xxxxxxxx", hat_closed: "xxxxxxxxxxxxxxxx"}
+  fill: {clap: "x.xx.x.xx.x.x.xx", hat_closed: "x.x.xx.x.x.xx.x.", perc: "..o..o.o..o.o..o"}
 bass:
   octave: 1
   patterns:
@@ -67,9 +68,8 @@ chords:      # drone: tonic + fifth (scale steps 0 and 4)
   octave: 3
   tones: [0, 4]
   extension: 7
-  progressions:   # tonic drone, or tonic with the ghammaz (degree 3) on the third bar; never a drone on degree 4
+  progressions:   # tonic drone only (review: a bass on the ghammaz G made the half-flat E sound out of tune)
     drone_a: [0, 0, 0, 0]
-    drone_b: [0, 0, 3, 0]
   rhythms:
     held: "x---------------"
 pad:         # open voicing, no third: tonic, fifth, octave
@@ -83,14 +83,16 @@ lead:
   # melodic weight per scale degree: the lower jins (D, E half-flat, F, G) carries the tune
   degree_weights: {-1: 0.4, 0: 1.5, 1: 1.5, 2: 1.5, 3: 1.5, 4: 1.0, 5: 0.7, 6: 0.6, 7: 0.8, 8: 0.5, 9: 0.4}
   start_degrees: [0, 1, 2, 3]   # motifs start inside the jins
-  rest_degrees: [0, 3]          # phrases end on the tonic or the ghammaz
+  rest_degrees: [0, 3]          # phrases end on the tonic or the ghammaz, approached by step
+  rest_below_energy: 0.3        # the lead rests every other phrase only in the quietest sections
+  ornament_prob: 0.6            # neighbour-note graces on most phrases
 motif_pool: 10
 transforms: [identity, retrograde, shift]   # no transposing transforms: the tune stays in the jins
 no_repeat: {form: 1, drums: 2, bass: 2, progression: 2, chord_rhythm: 0, motif: 5}
 timbre:
   kick:       {kind: doum, freq: 73.4, tune_to_key: true, pitch_amount: 0.6, pitch_decay: 0.03, decay: 0.35, click: 0.1, level_db: -9}   # D2: the doum sits on the tonic
   clap:       {kind: tek, decay: 0.05, tone: 2500, level_db: -12}
-  hat_closed: {kind: riq, decay: 0.07, tone: 7000, level_db: -24}
+  hat_closed: {kind: riq, decay: 0.07, tone: 7000, level_db: -27}
   hat_open:   {kind: riq, decay: 0.25, tone: 6500, level_db: -25}
   perc:       {kind: rim, freq: 1800, decay: 0.035, level_db: -21}
   ride:       {decay: 0.5, tone: 6000, level_db: -40}
@@ -118,10 +120,10 @@ flux_host:
   # Measured patch levels (flux-engine, test phrase per layer, after transpose) offset so the mix keeps
   # the timbre table's balance relative to the bass.
   gain_db:
-    "Surge XT": {bass: -4.0, chords: -12.2, pad: -12.1, lead: -11.2}   # bass and doum lower, drone and pad up: the groove is less of a step above the intro
+    "Surge XT": {bass: -10.0, chords: -12.2, pad: -12.1, lead: -11.2}   # bass well under the drone and lead (review: Pianobass 6-8 dB too loud)
   # Post-render filters per layer (Hz).
   eq:
-    "Surge XT": {lead: {lowpass: 4500}, chords: {highpass: 100, lowpass: 2500}}
+    "Surge XT": {lead: {lowpass: 4500}, chords: {highpass: 100, lowpass: 2500}, bass: {lowpass: 400}}
   # Pitch-bend range in semitones (measured: bend 0.25 = +0.50 st on Pianobass, Organ 1 and East).
   # Quarter tones are carried as a fixed bend on one extra instrument track per cent offset.
   bend_range:

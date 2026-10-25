@@ -368,6 +368,17 @@ the review's verdicts are next to them. Table keys that came out of it:
 | `lead.rest_degrees` | the last note of every motif snaps to the nearest of these |
 | `timbre.kick.tune_to_key` | built-in kick fundamental on the section tonic nearest `freq` |
 | `flux_host.eq.<plugin>.<layer>` | `{highpass, lowpass}` Hz applied to the engine stem |
+| `offbeat_push_ms` | offbeat-eighth hats, percussion and ride land this late (and softer); odd sixteenths softer still |
+| `pad.octave` | register of the pad (default: the chords' octave) |
+| `lead.rest_below_energy` | below this energy the lead rests every other phrase (default 0.75) |
+| `lead.ornament_prob` | chance of a neighbour-note grace per phrase (default 0.3) |
+| `lead.start_degrees` | degrees a motif may start on (default `[0, 2, 4]`) |
+
+Round 2 (2026-10-25, two independent listeners on the v2 renders) added the
+groove keys above, kept kick and bass playing through an incoming overlap, let
+the set's final outro keep its harmony, made stepwise melodies treat the degree
+below the tonic as a lower neighbour only and approach their resting note by
+step, and cut the maqam riser and ghammaz drone.
 
 Generator version 2 (staggered entries, drum hand-off in overlaps, pad tones
 from the table) changes every section hash, so old run directories re-render.

@@ -162,11 +162,13 @@ def effective_windows(g: dict) -> dict:
     return {k: max(0, min(int(nr.get(k, 1)), vocab[k] - 1)) for k in PATTERN_FIELDS}
 
 
-def _layers(g: dict, sec_type: str, energy: float) -> list[str]:
+def _layers(g: dict, sec_type: str, energy: float, keep: tuple = ()) -> list[str]:
+    """Layers of a section: those over their energy threshold minus the type's mutes plus its adds.
+    `keep` exempts layers from the mute list (the set's final outro keeps its harmony)."""
     st = g["section_types"].get(sec_type, {})
     thr = g["layers"]
     on = [l for l in ALL_LAYERS if energy >= float(thr.get(l, 1.1))]
-    on = [l for l in on if l not in st.get("mute", [])]
+    on = [l for l in on if l not in st.get("mute", []) or l in keep]
     for l in st.get("add", []):
         if l not in on:
             on.append(l)
@@ -222,11 +224,16 @@ def _make_motifs(g: dict, rng: random.Random) -> list[dict]:
             notes.append([st, length, deg, vel])
             cands = [-2, -1, 1, 2, -3, 3, 4, -4]
             w = [sw * pref.get(min(hi, max(lo, deg + st)), 1.0) for st, sw in zip(cands, step_w)]
+            if stepwise:  # below the tonic only as a lower neighbour: down one step to it, up one step back
+                w = [0.0 if ((deg + st < 0 and st != -1) or (deg < 0 and st != 1)) else x for st, x in zip(cands, w)]
             step = _weighted(rng, cands, w)
             deg = min(hi, max(lo, deg + step))
         if rest and notes:
             last = notes[-1][2]
-            notes[-1][2] = min(rest, key=lambda r: (abs(r - last), r))
+            r = min(rest, key=lambda d: (abs(d - last), d))
+            notes[-1][2] = r
+            if len(notes) >= 3:  # cadence: approach the resting note by step from the side the line came from
+                notes[-2][2] = r + 1 if notes[-3][2] > r else r - 1
         motifs.append({"id": f"m{k:02d}", "bars": bars, "notes": notes})
     return motifs
 
@@ -367,7 +374,7 @@ def plan(genre: str, hours: float, seed: int = 0, constraints: dict | None = Non
                 "energy": e,
                 "energy_end": e_end,
                 "bars": bars,
-                "layers": _layers(g, stype, e),
+                "layers": _layers(g, stype, e, keep=("chords", "pad") if last and stype == "outro" else ()),
                 "seeds": {"section": sseed, "drums": derive_seed(sseed, "drums"), "bass": derive_seed(sseed, "bass"),
                           "chords": derive_seed(sseed, "chords"), "lead": derive_seed(sseed, "lead"),
                           "render": derive_seed(sseed, "render")},

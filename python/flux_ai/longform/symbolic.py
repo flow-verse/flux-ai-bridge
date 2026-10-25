@@ -17,8 +17,15 @@ Arrangement rules (generator version 2, after the first listening review):
 - in a transition overlap the hats, claps and percussion of only one section
   play at a time (outgoing in the first half, incoming in the second), so the
   two sections' drum jitter never flams; kicks are handled by the low-band swap;
-- the pad's chord tones come from the genre table (`pad.tones`), so a maqam
-  drone can be tonic + fifth + octave rather than a triad.
+- the pad's chord tones and octave come from the genre table (`pad.tones`,
+  `pad.octave`), so a maqam drone can be tonic + fifth + octave rather than a
+  triad;
+- kick and bass stay in through an incoming overlap (they take over at the
+  low-band swap), whatever the intro's DJ-style entry order;
+- groove feel (round 2): offbeat eighth-note hats, percussion and ride land
+  `offbeat_push_ms` late and softer, and odd sixteenths softer still; the
+  lead's call/response rest threshold (`lead.rest_below_energy`) and ornament
+  rate (`lead.ornament_prob`) come from the table.
 """
 from __future__ import annotations
 
@@ -87,7 +94,7 @@ def _transform(motif: dict, name: str) -> list[list]:
     return notes
 
 
-def _vary_motif(notes: list[list], steps: int, variation: int, rng: random.Random) -> list[list]:
+def _vary_motif(notes: list[list], steps: int, variation: int, rng: random.Random, ornament: float = 0.3) -> list[list]:
     """Per-phrase variation so repeated phrases are never identical copies."""
     out = [list(n) for n in notes]
     kind = variation % 4
@@ -100,7 +107,7 @@ def _vary_motif(notes: list[list], steps: int, variation: int, rng: random.Rando
     elif kind == 3:  # answer phrase: up a third
         for n in out:
             n[2] += 2
-    if rng.random() < 0.3 and out:  # ornament: neighbour-note grace
+    if rng.random() < ornament and out:  # ornament: neighbour-note grace
         k = rng.randrange(len(out))
         if out[k][1] >= 2:
             out[k][1] -= 1
@@ -152,6 +159,8 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
         """DJ-style intros/outros: layers enter (intro) or leave (outro) across 8-bar phrases."""
         if layer not in layers or b < entry.get(layer, 0):
             return False
+        if layer in ("kick", "bass") and ov_in and b < ov_in:
+            return True  # the low band swaps to this section inside the overlap: it must be playing
         if n_ph < 2 or s["type"] not in ("intro", "outro") or len(order) < 2:
             return True
         # never fewer than two layers: a bare kick is identical in every segment
@@ -163,6 +172,7 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
     seeds = s["seeds"]
     bars = s["bars"]
     bp = s["bar_plan"]
+    push_ticks = int(round(float(g.get("offbeat_push_ms", 0)) / 1000.0 * float(s["bpm"]) / 60.0 * TPB))
     notes: list[Note] = []
     cc: list[tuple[int, str, int]] = []  # (tick, track, value) brightness automation
 
@@ -208,9 +218,17 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
                 if v is None:
                     continue
                 jitter = 0 if inst == "kick" else rng.randint(-6, 6)
-                spread = 0.12 if inst in ("hat_closed", "hat_open", "perc", "ride") else 0.05
+                light = inst in ("hat_closed", "hat_open", "perc", "ride")
+                spread = 0.12 if light else 0.05
+                push = 0
+                if light:
+                    if k % 4 == 2:      # offbeat eighth: laid back and softer
+                        v *= 0.8
+                        push = push_ticks
+                    elif k % 2 == 1:    # sixteenth in between: softer still
+                        v *= 0.7
                 vel = min(1.0, v * (0.78 + 0.22 * e) + rng.uniform(-spread, spread))
-                start = b * BAR + max(0, _swing_tick(k, swing) + jitter)
+                start = b * BAR + max(0, _swing_tick(k, swing) + jitter + push)
                 notes.append(Note("drums", start, STEP // 2, GM_DRUMS[inst], vel))
         if s["type"] == "peak" and b % 16 == 0 and e > 0.7 and "ride" in g["drums"]["patterns"][s["patterns"]["drums"]] and "hat_open" in layers:
             notes.append(Note("drums", b * BAR, STEP, GM_DRUMS["crash"], 0.6))
@@ -295,6 +313,7 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
     # ---- pad: held chord tones, one chord per run of equal bar chords
     if "pad" in layers:
         pad_tones = list((g.get("pad") or {}).get("tones", [0, 2, 4]))
+        p_base = theory.tonic_midi(key, int((g.get("pad") or {}).get("octave", g["chords"].get("octave", 4))))
         b = 0
         while b < bars:
             run = 1
@@ -303,7 +322,7 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
             if not active("pad", b):
                 b += run
                 continue
-            pitches = sorted({_fold(theory.degree_pitch(c_base, cents, bp[b]["chord"] + t), c_base - 3, c_base + 12) for t in pad_tones})
+            pitches = sorted({_fold(theory.degree_pitch(p_base, cents, bp[b]["chord"] + t), p_base - 3, p_base + 12) for t in pad_tones})
             for p in pitches:
                 notes.append(Note("pad", b * BAR, run * BAR - STEP, p, 0.7))
             b += run
@@ -315,17 +334,19 @@ def generate_notes(plan: dict, index: int) -> tuple[list[Note], dict]:
         base_notes = _transform(motif, motif_ref.get("transform", "identity"))
         mb = motif["bars"]
         l_base = theory.tonic_midi(key, int(g["lead"].get("octave", 5)))
+        rest_below = float(g["lead"].get("rest_below_energy", 0.75))
+        ornament = float(g["lead"].get("ornament_prob", 0.3))
         for b0 in range(0, bars, mb):
             ph = bp[b0]["phrase"]
             e = bp[b0]["energy"]
             if not active("lead", b0):
                 continue
             # call/response: at lower energy the lead rests every other motif slot
-            if e < 0.75 and (b0 // mb) % 2 == 1 and b0 % 8 != 0:
+            if e < rest_below and (b0 // mb) % 2 == 1 and b0 % 8 != 0:
                 continue
             rng = random.Random(seeds.get("lead", 0) * 13 + ph * 101 + b0)
             var = bp[b0]["variation"] if (b0 // mb) % 2 else bp[ph * 8 if ph * 8 < bars else b0]["variation"]
-            phrase_notes = _vary_motif(base_notes, 16 * mb, var, rng)
+            phrase_notes = _vary_motif(base_notes, 16 * mb, var, rng, ornament)
             for st, ln, deg, vel in phrase_notes:
                 tick = b0 * BAR + _swing_tick(st, swing)
                 if tick >= bars * BAR:
